@@ -1,0 +1,11 @@
+feature,auc_drop
+nbr_n_vacant_zip,0.12353028560325297
+nbr_ovs_rate_zip,0.07855606663573378
+days_since_last_cs,0.06873578336227426
+days_since_last_viol,0.04102559415376983
+nbr_n_vacant_tract,0.009135528650815128
+nbr_ovs_rate_tract,0.005417896775511966
+building_age,0.005371601325513398
+resolution_rate,0.004959962000843365
+exterior_condition,0.004351877901636159
+n_distinct_codes,0.004053560196028871

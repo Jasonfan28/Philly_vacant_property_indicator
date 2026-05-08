@@ -1,0 +1,555 @@
+---
+title: "PhillyStat360 — 04b: Model Validation (R port)"
+output: html_document
+---
+
+R port of `code/python/04b_model_validation.ipynb`.
+
+Extends 04a with:
+
+1. **Spatial CV** by ZIP (`group_vfold_cv` from `rsample`).
+2. **LOGO CV** (leave-one-ZIP-out).
+3. **Prediction confidence intervals** from RF tree variance.
+4. **Sanity checks** — VIP, calibration curve, partial dependence, known-vacant scoring.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## 0. Setup
+
+```{r setup-libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(tidymodels)
+  library(ranger)
+  library(rsample)
+  library(yardstick)
+  library(pdp)        # partial dependence
+})
+
+ROOT       <- here::here()
+DATA_PATH  <- file.path(ROOT, "data")
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+
+stopifnot(file.exists(file.path(PY_PATH, "all_predictions_rf.csv")))
+
+SEED <- 42; set.seed(SEED)
+TRAIN_CUTOFF <- as.Date("2025-10-01")
+```
+
+## 1. Load data
+
+```{r load}
+features_df <- read_csv(file.path(DATA_PATH, "features_residential.csv"),
+                        show_col_types = FALSE)
+preds <- read_csv(file.path(PY_PATH, "all_predictions_rf.csv"),
+                  show_col_types = FALSE) |>
+  mutate(parcel_number = as.character(parcel_number))
+thresholds <- read_csv(file.path(PY_PATH, "model_thresholds.csv"),
+                       show_col_types = FALSE)
+
+# 04a artifacts
+logit_fit <- readRDS(file.path(PY_PATH, "model_logit_final.rds"))
+calibrators <- readRDS(file.path(PY_PATH, "calibrators.rds"))
+cal_ens <- calibrators$ensemble
+
+ens_thresh <- thresholds |> filter(model == "ensemble") |> pull(threshold) |> first()
+cat(sprintf("Ensemble Youden threshold from 04a: %.4f\n", ens_thresh))
+
+stopifnot(all(c("ensemble_prob", "ensemble_prob_raw",
+                "ensemble_flag", "risk_score") %in% names(preds)))
+```
+
+## 2. Rebuild model dataset
+
+```{r rebuild}
+model_vars <- c(
+  "n_violations_total", "n_violations_recent",
+  "n_violations_2yr", "n_violations_3yr", "n_violations_5yr",
+  "n_distinct_codes",
+  "viol_trend_3v5", "viol_accel_2v3",
+  "n_repeat_codes", "resolution_rate",
+  "has_fire_safety_code", "days_since_last_viol",
+  "license_lapse_rate",
+  "exterior_condition", "building_age",
+  "log_livable_area", "is_poor_condition",
+  "years_since_sale",
+  "n_cs_total", "cs_span_days", "days_since_last_cs",
+  "n_transfers_total", "n_transfers_5yr", "n_transfers_3yr",
+  "n_deed_transfers",
+  "had_sheriff_sale", "sheriff_sale_recent", "n_sheriff_sales",
+  "log_price_change",
+  "days_since_last_transfer",
+  "nbr_ovs_rate_zip", "nbr_ovs_rate_tract",
+  "nbr_n_vacant_zip", "nbr_n_vacant_tract"
+)
+
+model_df <- features_df |>
+  filter(!is.na(exterior_condition), !is.na(building_age))
+
+for (col in c("days_since_last_viol", "days_since_last_transfer")) {
+  if (col %in% names(model_df) && any(is.na(model_df[[col]]))) {
+    model_df[[col]] <- replace_na(as.numeric(model_df[[col]]),
+                                  median(model_df[[col]], na.rm = TRUE))
+  }
+}
+if ("days_oldest_open_viol" %in% names(model_df)) {
+  model_df$days_oldest_open_viol <- replace_na(
+    as.integer(model_df$days_oldest_open_viol), 0L
+  )
+}
+stopifnot("zip_code" %in% names(model_df))
+
+split <- initial_split(model_df, prop = 0.70, strata = ovs)
+train_df <- training(split)
+test_df  <- testing(split)
+cat("Train:", nrow(train_df), " Test:", nrow(test_df), "\n")
+```
+
+## 3. RF helper
+
+```{r rf-helper}
+rf_tune_csv <- file.path(PY_PATH, "rf_tune_results.csv")
+if (file.exists(rf_tune_csv)) {
+  s <- read_csv(rf_tune_csv, show_col_types = FALSE)
+  BEST_MTRY  <- as.integer(s$mtry[1])
+  BEST_MIN_N <- as.integer(s$min_n[1])
+} else {
+  BEST_MTRY  <- floor(sqrt(length(model_vars)))
+  BEST_MIN_N <- 5L
+}
+
+n_neg <- sum(train_df$ovs == 0); n_pos <- sum(train_df$ovs == 1)
+spw <- n_neg / max(n_pos, 1)
+
+fit_rf <- function(data, n_trees = 500) {
+  d <- data |>
+    select(all_of(model_vars), ovs) |>
+    mutate(across(where(is.numeric),
+                  \(x) replace_na(x, median(x, na.rm = TRUE))),
+           ovs_factor = factor(ovs, levels = c(0, 1),
+                               labels = c("not_vacant", "vacant"))) |>
+    select(-ovs)
+  ranger(ovs_factor ~ ., data = d,
+         num.trees = n_trees, mtry = BEST_MTRY,
+         min.node.size = BEST_MIN_N,
+         probability = TRUE,
+         class.weights = c(not_vacant = 1, vacant = spw),
+         seed = SEED, num.threads = parallel::detectCores())
+}
+
+predict_rf <- function(fit, data) {
+  d <- data |> select(all_of(model_vars)) |>
+    mutate(across(where(is.numeric),
+                  \(x) replace_na(x, median(x, na.rm = TRUE))))
+  predict(fit, data = d)$predictions[, "vacant"]
+}
+```
+
+## 4. Spatial CV by ZIP
+
+```{r spatial-cv}
+SAMPLE_FOR_CV <- TRUE
+CV_TREES <- 200L
+
+cv_data <- if (SAMPLE_FOR_CV) {
+  train_df |> group_by(zip_code) |>
+    slice_sample(prop = 0.10) |> ungroup()
+} else train_df
+
+cat("Spatial CV on", nrow(cv_data), "rows |",
+    n_distinct(cv_data$zip_code), "ZIPs\n")
+
+# rsample::group_vfold_cv groups by ZIP
+groups_cv <- group_vfold_cv(cv_data, group = zip_code, v = 10)
+
+cv_fold_metrics <- function(splits) {
+  tr <- analysis(splits); te <- assessment(splits)
+  fit <- fit_rf(tr, n_trees = CV_TREES)
+  p <- predict_rf(fit, te)
+  y <- te$ovs
+  fpr_tpr <- yardstick::roc_curve(
+    tibble(t = factor(y, levels = c(1, 0)), p = p),
+    truth = t, p, event_level = "first"
+  )
+  tibble(
+    n_train = nrow(tr), n_test = nrow(te),
+    n_groups_held_out = n_distinct(te$zip_code),
+    roc_auc = as.numeric(yardstick::roc_auc_vec(
+      factor(y, levels = c(1, 0)), p, event_level = "first")),
+    pr_auc = as.numeric(yardstick::pr_auc_vec(
+      factor(y, levels = c(1, 0)), p, event_level = "first")),
+    j_index = max(fpr_tpr$sensitivity + fpr_tpr$specificity - 1)
+  )
+}
+
+spatial_cv <- map2_dfr(
+  groups_cv$splits, seq_along(groups_cv$splits),
+  \(s, i) cv_fold_metrics(s) |> mutate(fold = i, .before = 1)
+)
+spatial_cv
+```
+
+```{r spatial-cv-plot, fig.width=10, fig.height=4.5}
+spatial_cv_long <- spatial_cv |>
+  select(fold, roc_auc, j_index) |>
+  pivot_longer(-fold, names_to = "metric", values_to = "value")
+sp_p <- ggplot(spatial_cv_long, aes(fold, value, color = metric)) +
+  geom_line() + geom_point() +
+  scale_color_manual(values = c(roc_auc = "steelblue", j_index = "tomato")) +
+  labs(title = "Spatial CV: per-fold performance by ZIP-code group",
+       x = "Fold", y = "Metric") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "spatial_cv_performance.png"),
+       sp_p, width = 10, height = 4.5, dpi = 200)
+sp_p
+```
+
+## 5. LOGO CV
+
+```{r logo-cv}
+SAMPLE_FOR_LOGO <- TRUE
+N_LOGO_ZIPS <- 15L
+
+logo_data <- cv_data
+if (SAMPLE_FOR_LOGO) {
+  set.seed(SEED)
+  zips_avail <- na.omit(unique(logo_data$zip_code))
+  sampled <- sample(zips_avail,
+                    size = min(N_LOGO_ZIPS, length(zips_avail)))
+  logo_data <- logo_data |> filter(zip_code %in% sampled)
+}
+
+logo_metrics <- function(data, n_trees = 200) {
+  zips <- na.omit(unique(data$zip_code))
+  rows <- list()
+  for (i in seq_along(zips)) {
+    z <- zips[i]
+    te <- data |> filter(zip_code == z)
+    tr <- data |> filter(zip_code != z)
+    n_pos <- sum(te$ovs == 1)
+    if (n_pos < 2 || nrow(te) < 50) next
+    fit <- fit_rf(tr, n_trees = n_trees)
+    p <- predict_rf(fit, te)
+    rows[[length(rows) + 1]] <- tibble(
+      fold = i, zip = z, n = nrow(te), n_vacant = n_pos,
+      roc_auc = as.numeric(yardstick::roc_auc_vec(
+        factor(te$ovs, levels = c(1, 0)), p, event_level = "first")),
+      pr_auc = as.numeric(yardstick::pr_auc_vec(
+        factor(te$ovs, levels = c(1, 0)), p, event_level = "first"))
+    )
+  }
+  bind_rows(rows)
+}
+
+logo_results <- logo_metrics(logo_data, n_trees = CV_TREES)
+cat(sprintf("LOGO mean AUC: %.4f | median: %.4f | < 0.70: %d\n",
+            mean(logo_results$roc_auc), median(logo_results$roc_auc),
+            sum(logo_results$roc_auc < 0.70)))
+```
+
+```{r logo-plot, fig.width=10}
+logo_p <- logo_results |>
+  arrange(roc_auc) |>
+  mutate(zip = factor(zip, levels = zip),
+         color = ifelse(roc_auc < 0.70, "tomato", "steelblue")) |>
+  ggplot(aes(roc_auc, zip, fill = color)) +
+  geom_col() +
+  scale_fill_identity() +
+  geom_vline(xintercept = mean(logo_results$roc_auc),
+             linetype = "dashed", color = "gray") +
+  xlim(0, 1) +
+  labs(title = "LOGO CV: AUC by held-out ZIP\n(red = AUC < 0.70)",
+       x = "ROC-AUC", y = NULL) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "logo_cv_by_zip.png"), logo_p,
+       width = 10, height = max(6, 0.3 * nrow(logo_results)), dpi = 200)
+logo_p
+```
+
+## 6. Prediction CIs from RF tree variance
+
+```{r rf-ci}
+cat("Refitting RF (500 trees) for CI estimation…\n")
+rf_full <- fit_rf(train_df, n_trees = 500)
+
+rf_predict_with_ci <- function(fit, data) {
+  d <- data |> select(all_of(model_vars)) |>
+    mutate(across(where(is.numeric),
+                  \(x) replace_na(x, median(x, na.rm = TRUE))))
+  # ranger predict.all=TRUE returns per-tree votes (probabilities since
+  # probability=TRUE was set).
+  pred_obj <- predict(fit, data = d, predict.all = TRUE)
+  # predictions array: [n, n_classes, n_trees] in newer ranger; handle both
+  arr <- pred_obj$predictions
+  if (length(dim(arr)) == 3) {
+    tree_probs <- arr[, "vacant", ]   # n × n_trees
+  } else {
+    # older ranger returns binary votes for predict.all
+    tree_probs <- arr   # treat as proxy (votes in {0,1})
+  }
+  rf_prob <- rowMeans(tree_probs)
+  rf_se   <- apply(tree_probs, 1, sd) / sqrt(ncol(tree_probs))
+  ci_lower <- pmax(0, rf_prob - 1.96 * rf_se)
+  ci_upper <- pmin(1, rf_prob + 1.96 * rf_se)
+  tibble(rf_prob = rf_prob, rf_se = rf_se,
+         ci_lower = ci_lower, ci_upper = ci_upper,
+         ci_width = ci_upper - ci_lower)
+}
+
+ci_df <- rf_predict_with_ci(rf_full, test_df)
+test_with_ci <- bind_cols(test_df |> mutate(rownum = row_number()),
+                          ci_df |> mutate(rownum = row_number())) |>
+  select(-rownum)
+
+# Score test parcels with the production ensemble
+d_test_imp <- test_df |> select(all_of(model_vars)) |>
+  mutate(across(where(is.numeric),
+                \(x) replace_na(x, median(x, na.rm = TRUE))))
+test_with_ci$logit_prob_raw    <- predict(logit_fit, d_test_imp, type = "response")
+test_with_ci$rf_prob_raw       <- test_with_ci$rf_prob
+test_with_ci$ensemble_prob_raw <- 0.5 * test_with_ci$logit_prob_raw + 0.5 * test_with_ci$rf_prob_raw
+test_with_ci$ensemble_prob     <- pmin(pmax(cal_ens$fn(test_with_ci$ensemble_prob_raw), 0), 1)
+
+ens_preds_for_test <- preds |> select(parcel_number, ensemble_flag, qtile_tier) |>
+  mutate(parcel_number = as.character(parcel_number))
+test_with_ci <- test_with_ci |>
+  mutate(parcel_number = as.character(parcel_number)) |>
+  left_join(ens_preds_for_test, by = "parcel_number")
+
+ens_auc <- as.numeric(yardstick::roc_auc_vec(
+  factor(test_with_ci$ovs, levels = c(1, 0)),
+  test_with_ci$ensemble_prob, event_level = "first"))
+cat(sprintf("Ensemble test AUC: %.4f\n", ens_auc))
+
+tibble(
+  metric = c("mean P(vacant)", "mean SE", "mean CI width",
+             "% CI < 0.10", "% CI > 0.30"),
+  value = c(
+    sprintf("%.4f", mean(test_with_ci$rf_prob)),
+    sprintf("%.4f", mean(test_with_ci$rf_se)),
+    sprintf("%.4f", mean(test_with_ci$ci_width)),
+    sprintf("%.1f%%", 100 * mean(test_with_ci$ci_width < 0.10)),
+    sprintf("%.1f%%", 100 * mean(test_with_ci$ci_width > 0.30))
+  )
+)
+```
+
+```{r ci-plots, fig.width=13, fig.height=4.5}
+binned <- test_with_ci |>
+  mutate(prob_bin = cut(rf_prob, breaks = seq(0, 1, 0.05),
+                        include.lowest = TRUE)) |>
+  group_by(prob_bin) |>
+  summarise(mean_prob = mean(rf_prob),
+            mean_ci   = mean(ci_width),
+            n         = n(), .groups = "drop") |>
+  drop_na()
+
+p1 <- ggplot(binned, aes(mean_prob, mean_ci)) +
+  geom_line(color = "steelblue") + geom_point(aes(size = n), color = "steelblue") +
+  labs(title = "CI width vs predicted probability",
+       x = "Predicted P(vacant)", y = "Mean CI width") +
+  theme_minimal()
+
+p2 <- test_with_ci |>
+  ggplot(aes(ci_width, fill = factor(ovs))) +
+  geom_histogram(bins = 40, alpha = 0.5, position = "identity") +
+  scale_fill_manual(values = c("0" = "steelblue", "1" = "tomato")) +
+  labs(title = "CI width distribution by OVS",
+       x = "CI width", fill = "OVS") +
+  theme_minimal()
+
+p_combined <- patchwork::wrap_plots(p1, p2, ncol = 2)
+ggsave(file.path(GRAPH_PATH, "prediction_ci_analysis.png"),
+       p_combined, width = 13, height = 4.5, dpi = 200)
+p_combined
+```
+
+```{r high-uncertainty}
+high_unc_mask <- test_with_ci$ci_width > 0.30 & test_with_ci$ensemble_flag == 1
+cat(sprintf("Production-flagged: %d | of those, CI > 0.30: %d\n",
+            sum(test_with_ci$ensemble_flag == 1, na.rm = TRUE),
+            sum(high_unc_mask, na.rm = TRUE)))
+
+test_with_ci |>
+  filter(high_unc_mask) |>
+  arrange(desc(ci_width)) |>
+  select(parcel_number, ovs, ensemble_prob, rf_prob, rf_se,
+         ci_lower, ci_upper, ci_width, qtile_tier) |>
+  head(20)
+```
+
+## 7. Sanity checks
+
+### 7a. Feature importance (impurity)
+
+```{r vip}
+imp_rf2 <- ranger(
+  ovs_factor ~ .,
+  data = train_df |> select(all_of(model_vars), ovs) |>
+    mutate(across(where(is.numeric),
+                  \(x) replace_na(x, median(x, na.rm = TRUE))),
+           ovs_factor = factor(ovs, levels = c(0, 1),
+                               labels = c("not_vacant", "vacant"))) |>
+    select(-ovs),
+  num.trees = 500, mtry = BEST_MTRY, min.node.size = BEST_MIN_N,
+  probability = TRUE, importance = "impurity",
+  class.weights = c(not_vacant = 1, vacant = spw),
+  seed = SEED, num.threads = parallel::detectCores()
+)
+
+imp_df <- tibble(feature = names(imp_rf2$variable.importance),
+                 importance = imp_rf2$variable.importance) |>
+  arrange(desc(importance)) |> head(20) |>
+  mutate(feature = factor(feature, levels = rev(feature)))
+
+vip_p <- ggplot(imp_df, aes(importance, feature)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Top 20 features by impurity importance") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "rf_vip_04b.png"), vip_p,
+       width = 8, height = 7, dpi = 200)
+vip_p
+```
+
+### 7b. Calibration curve
+
+```{r calibration, fig.width=8, fig.height=6.5}
+y_true <- test_with_ci$ovs
+
+cal_curve <- function(y, p, n_bins = 10) {
+  qs <- quantile(p, probs = seq(0, 1, length.out = n_bins + 1), type = 5)
+  qs[1] <- qs[1] - 1e-9; qs[length(qs)] <- qs[length(qs)] + 1e-9
+  bin <- cut(p, breaks = qs, include.lowest = TRUE)
+  tibble(p = p, y = y, bin = bin) |>
+    group_by(bin) |>
+    summarise(prob_pred = mean(p), prob_true = mean(y), n = n(), .groups = "drop")
+}
+
+cc_rf  <- cal_curve(y_true, test_with_ci$rf_prob)
+cc_ens <- cal_curve(y_true, test_with_ci$ensemble_prob)
+
+cal_p <- ggplot() +
+  geom_abline(slope = 1, linetype = "dashed", color = "gray") +
+  geom_line(data = cc_rf,  aes(prob_pred, prob_true), color = "steelblue") +
+  geom_point(data = cc_rf, aes(prob_pred, prob_true), color = "steelblue") +
+  geom_line(data = cc_ens, aes(prob_pred, prob_true), color = "black", linewidth = 1.2) +
+  geom_point(data = cc_ens, aes(prob_pred, prob_true), color = "black") +
+  labs(title = "Calibration: ensemble (production) vs RF alone",
+       x = "Mean predicted P(vacant)", y = "Observed vacancy rate") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "calibration_curve.png"),
+       cal_p, width = 8, height = 6.5, dpi = 200)
+cal_p
+```
+
+### 7c. Known-vacant scoring check
+
+```{r known-vacant}
+safe_col <- function(df, col, default = 0) {
+  if (col %in% names(df)) df[[col]] else rep(default, nrow(df))
+}
+
+groups <- rep("No strong signal", nrow(test_with_ci))
+groups[safe_col(test_with_ci, "cs_truly_active") == 1] <- "Clean & Seal active (strongest)"
+m <- groups == "No strong signal" & safe_col(test_with_ci, "had_vacancy_license") == 1
+groups[m] <- "Had vacancy license"
+m <- groups == "No strong signal" & safe_col(test_with_ci, "has_open_vacancy_kw") == 1
+groups[m] <- "Open vacancy-kw violation"
+
+test_with_ci |>
+  mutate(group = groups) |>
+  group_by(group) |>
+  summarise(
+    n = n(),
+    ovs1_rate = mean(ovs == 1),
+    mean_ensemble_prob = mean(ensemble_prob),
+    mean_rf_prob = mean(rf_prob),
+    pct_flagged = mean(ensemble_flag == 1, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(desc(mean_ensemble_prob))
+```
+
+### 7d. Partial dependence — `n_violations_total`
+
+```{r pdp, fig.width=8, fig.height=4.5}
+sample_df <- train_df |> slice_sample(n = min(20000, nrow(train_df))) |>
+  select(all_of(model_vars)) |>
+  mutate(across(where(is.numeric),
+                \(x) replace_na(x, median(x, na.rm = TRUE))))
+
+pred_wrap <- function(object, newdata) {
+  predict(object, data = newdata)$predictions[, "vacant"]
+}
+
+pd <- pdp::partial(rf_full, pred.var = "n_violations_total",
+                   train = sample_df, grid.resolution = 30,
+                   pred.fun = function(object, newdata) {
+                     mean(predict(object, data = newdata)$predictions[, "vacant"])
+                   })
+
+pdp_p <- ggplot(pd, aes(n_violations_total, yhat)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  labs(title = "Partial dependence: P(vacant) vs n_violations_total",
+       x = "n_violations_total", y = "Marginal P(vacant)") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "partial_dependence_violations.png"),
+       pdp_p, width = 8, height = 4.5, dpi = 200)
+pdp_p
+```
+
+## 8. Export
+
+```{r export}
+ci_export_cols <- c("parcel_number", "ovs",
+                    "ensemble_prob", "ensemble_prob_raw", "ensemble_flag",
+                    "rf_prob", "rf_se", "ci_lower", "ci_upper", "ci_width")
+test_with_ci |> select(any_of(ci_export_cols)) |>
+  write_csv(file.path(OUT_PATH, "predictions_with_ci.csv"))
+
+spatial_cv |> mutate(method = "spatial_zip") |>
+  write_csv(file.path(OUT_PATH, "spatial_cv_metrics.csv"))
+logo_results |> mutate(method = "logo_zip") |>
+  write_csv(file.path(OUT_PATH, "logo_cv_metrics.csv"))
+
+ens_test_pr_auc <- as.numeric(yardstick::pr_auc_vec(
+  factor(test_with_ci$ovs, levels = c(1, 0)),
+  test_with_ci$ensemble_prob, event_level = "first"))
+
+summary_tbl <- tibble(
+  check = c(
+    "Production model (test set) — ROC-AUC",
+    "Production model (test set) — PR-AUC",
+    "Spatial CV mean ROC-AUC (RF)",
+    "Spatial CV mean PR-AUC (RF)",
+    "LOGO CV mean ROC-AUC (RF)",
+    "LOGO CV mean PR-AUC (RF)",
+    "Test mean CI width",
+    "% production-flagged with CI > 0.30"
+  ),
+  value = c(
+    sprintf("%.4f", ens_auc),
+    sprintf("%.4f", ens_test_pr_auc),
+    sprintf("%.4f", mean(spatial_cv$roc_auc)),
+    sprintf("%.4f", mean(spatial_cv$pr_auc)),
+    sprintf("%.4f", mean(logo_results$roc_auc)),
+    sprintf("%.4f", mean(logo_results$pr_auc)),
+    sprintf("%.4f", mean(test_with_ci$ci_width)),
+    sprintf("%.2f%%", 100 * mean(
+      test_with_ci$ci_width > 0.30 & test_with_ci$ensemble_flag == 1,
+      na.rm = TRUE))
+  )
+)
+write_csv(summary_tbl, file.path(OUT_PATH, "validation_summary.csv"))
+summary_tbl
+```
+
+---
+
+**Done.** Set `SAMPLE_FOR_CV` and `SAMPLE_FOR_LOGO` to `FALSE` for a final
+no-sampling pass (~1–2 hours).

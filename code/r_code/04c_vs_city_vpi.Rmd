@@ -1,0 +1,440 @@
+---
+title: "PhillyStat360 — 04c: Final Model vs. City of Philadelphia VPI (R port)"
+output: html_document
+---
+
+R port of `code/python/04c_vs_city_vpi.ipynb`. Compares our final ensemble
+(`ensemble_prob` from 04a) against Philadelphia's Vacant Property Indicator
+(VPI) layer — building maps with `leaflet` instead of `folium`.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(yardstick)
+  library(sf)
+  library(leaflet)
+})
+
+ROOT       <- here::here()
+RAW_PATH   <- file.path(ROOT, "rawdata")
+DATA_PATH  <- file.path(ROOT, "data")
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+SEED <- 42
+```
+
+## 1. Load final-model predictions
+
+```{r load-preds}
+preds <- read_csv(file.path(PY_PATH, "predictions_04b.csv"),
+                  show_col_types = FALSE) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number)))
+
+RESIDENTIAL_CATS <- c("SINGLE FAMILY", "MULTI FAMILY", "MIXED USE",
+                      "APARTMENTS  > 4 UNITS")
+preds <- preds |> filter(category_code_description %in% RESIDENTIAL_CATS)
+cat(sprintf("Residential parcels: %d (ovs prevalence: %.3f%%)\n",
+            nrow(preds), 100 * mean(preds$ovs)))
+```
+
+## 2. Download VPI dataset
+
+```{r download-vpi}
+VPI_URL <- paste0("https://hub.arcgis.com/api/v3/datasets/",
+                  "f7ed68293c5e40d58f1de9c8435c3e84_0/downloads/data",
+                  "?format=geojson&spatialRefId=4326&where=1%3D1")
+VPI_PATH <- file.path(RAW_PATH, "vpi_bldg.geojson")
+dir.create(RAW_PATH, recursive = TRUE, showWarnings = FALSE)
+if (!file.exists(VPI_PATH)) {
+  download.file(VPI_URL, VPI_PATH, mode = "wb")
+}
+vpi_sf <- st_read(VPI_PATH, quiet = TRUE)
+names(vpi_sf) <- tolower(names(vpi_sf))
+cat("VPI raw rows:", nrow(vpi_sf), "\n")
+```
+
+## 3. Clean VPI → residential only
+
+```{r clean-vpi}
+vpi <- vpi_sf
+vpi$opa_id <- str_trim(as.character(vpi$opa_id))
+vpi <- vpi |> filter(opa_id != "" & opa_id != "nan" & !is.na(opa_id))
+
+opa <- read_csv(file.path(RAW_PATH, "opa_properties_public.csv"),
+                col_select = any_of(c("parcel_number", "category_code",
+                                      "category_code_description")),
+                show_col_types = FALSE) |>
+  rename_with(tolower) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number))) |>
+  distinct(parcel_number, .keep_all = TRUE)
+
+vpi_res <- vpi |>
+  st_drop_geometry() |>
+  left_join(opa, by = c("opa_id" = "parcel_number")) |>
+  filter(category_code_description %in% RESIDENTIAL_CATS)
+
+if ("build_rank" %in% names(vpi_res)) {
+  vpi_res$build_rank <- suppressWarnings(as.numeric(vpi_res$build_rank))
+  vpi_res <- vpi_res |>
+    arrange(desc(build_rank)) |>
+    distinct(opa_id, .keep_all = TRUE)
+}
+cat(sprintf("VPI ∩ residential: %d parcels\n", nrow(vpi_res)))
+```
+
+## 4. Head-to-head frame
+
+```{r merge}
+vpi_keep <- vpi_res |>
+  select(opa_id, build_rank) |>
+  rename(parcel_number = opa_id) |>
+  mutate(vpi_flag = 1L)
+
+df <- preds |>
+  left_join(vpi_keep, by = "parcel_number") |>
+  mutate(vpi_flag = replace_na(vpi_flag, 0L))
+cat(sprintf("Total: %d | ovs=1: %d | vpi_flag=1: %d\n",
+            nrow(df), sum(df$ovs), sum(df$vpi_flag)))
+```
+
+## 5. Head-to-head metrics
+
+```{r metrics}
+y      <- df$ovs
+p_ours <- df$ensemble_prob
+v_vpi  <- df$vpi_flag
+
+binary_metrics <- function(y_true, y_pred) {
+  tp <- sum(y_pred == 1 & y_true == 1)
+  fp <- sum(y_pred == 1 & y_true == 0)
+  fn <- sum(y_pred == 0 & y_true == 1)
+  tn <- sum(y_pred == 0 & y_true == 0)
+  precision <- if ((tp + fp) > 0) tp / (tp + fp) else NA_real_
+  recall    <- if ((tp + fn) > 0) tp / (tp + fn) else NA_real_
+  f1        <- if (!is.na(precision) && !is.na(recall) && (precision + recall) > 0)
+    2 * precision * recall / (precision + recall) else NA_real_
+  tibble(n_pos = sum(y_pred == 1), tp = tp, fp = fp, fn = fn,
+         precision = precision, recall = recall, f1 = f1)
+}
+
+N <- sum(v_vpi)
+thresh <- sort(p_ours, decreasing = TRUE)[N]
+p_ours_bin <- as.integer(p_ours >= thresh)
+
+compare <- bind_rows(
+  binary_metrics(y, v_vpi)    |> mutate(model = "City VPI (binary)"),
+  binary_metrics(y, p_ours_bin) |> mutate(model = sprintf("Ours @ matched prev (thresh=%.3f)", thresh)),
+  binary_metrics(y, as.integer(p_ours >= 0.5)) |> mutate(model = "Ours @ 0.5 threshold")
+) |> select(model, everything())
+compare
+
+auc_ours <- as.numeric(yardstick::roc_auc_vec(
+  factor(y, levels = c(1, 0)), p_ours, event_level = "first"))
+ap_ours <- as.numeric(yardstick::pr_auc_vec(
+  factor(y, levels = c(1, 0)), p_ours, event_level = "first"))
+auc_vpi <- as.numeric(yardstick::roc_auc_vec(
+  factor(y, levels = c(1, 0)), as.numeric(v_vpi), event_level = "first"))
+ap_vpi <- as.numeric(yardstick::pr_auc_vec(
+  factor(y, levels = c(1, 0)), as.numeric(v_vpi), event_level = "first"))
+cat(sprintf("AUC — Ours: %.4f | VPI: %.4f\n", auc_ours, auc_vpi))
+cat(sprintf("PR-AUC — Ours: %.4f | VPI: %.4f\n", ap_ours, ap_vpi))
+```
+
+## 6. Confusion between models
+
+```{r model-confusion}
+agreement <- table(City_VPI = v_vpi, Ours = p_ours_bin)
+print(agreement)
+
+disagree <- v_vpi != p_ours_bin
+cat(sprintf("Disagreements: %d | VPI right: %d | Ours right: %d\n",
+            sum(disagree), sum(v_vpi == y & disagree),
+            sum(p_ours_bin == y & disagree)))
+```
+
+## 7. ROC and PR curves
+
+```{r roc-pr-plots, fig.width=14, fig.height=5.5}
+roc_df <- yardstick::roc_curve(
+  tibble(t = factor(y, levels = c(1, 0)), p = p_ours),
+  truth = t, p, event_level = "first"
+)
+pr_df <- yardstick::pr_curve(
+  tibble(t = factor(y, levels = c(1, 0)), p = p_ours),
+  truth = t, p, event_level = "first"
+)
+vpi_pt <- binary_metrics(y, v_vpi)
+vpi_fpr <- vpi_pt$fp / (vpi_pt$fp + sum(y == 0 & v_vpi == 0))
+vpi_tpr <- vpi_pt$recall
+
+p_roc <- ggplot(roc_df, aes(1 - specificity, sensitivity)) +
+  geom_line(color = "#1f77b4", linewidth = 1) +
+  geom_abline(linetype = "dashed", color = "gray") +
+  geom_point(aes(x = vpi_fpr, y = vpi_tpr), color = "#d62728", size = 4) +
+  labs(title = "ROC", x = "FPR", y = "TPR") +
+  theme_minimal()
+
+p_pr <- ggplot(pr_df, aes(recall, precision)) +
+  geom_line(color = "#1f77b4", linewidth = 1) +
+  geom_point(aes(x = vpi_pt$recall, y = vpi_pt$precision),
+             color = "#d62728", size = 4) +
+  labs(title = "Precision–Recall") +
+  theme_minimal()
+
+combined <- patchwork::wrap_plots(p_roc, p_pr, ncol = 2)
+ggsave(file.path(GRAPH_PATH, "vs_city_vpi_roc_pr.png"), combined,
+       width = 14, height = 5.5, dpi = 200)
+combined
+```
+
+## 8. Where do the two models diverge?
+
+```{r buckets}
+df <- df |>
+  mutate(bucket = case_when(
+    p_ours_bin == 1 & v_vpi == 1 ~ "Both flag",
+    p_ours_bin == 1 & v_vpi == 0 ~ "Only ours flags",
+    p_ours_bin == 0 & v_vpi == 1 ~ "Only VPI flags",
+    TRUE                          ~ "Neither flags"
+  ))
+
+bucket_levels <- c("Both flag", "Only ours flags", "Only VPI flags", "Neither flags")
+bucket_summary <- df |>
+  group_by(bucket) |>
+  summarise(n_parcels = n(),
+            n_ovs = sum(ovs == 1),
+            ovs_rate = mean(ovs == 1),
+            mean_ensemble_prob = mean(ensemble_prob),
+            .groups = "drop") |>
+  mutate(bucket = factor(bucket, levels = bucket_levels)) |>
+  arrange(bucket)
+bucket_summary
+```
+
+```{r bucket-plot, fig.width=10, fig.height=5}
+bp <- ggplot(bucket_summary, aes(bucket)) +
+  geom_col(aes(y = ovs_rate), fill = "#d62728") +
+  geom_text(aes(y = ovs_rate, label = scales::percent(ovs_rate, 0.1)),
+            vjust = -0.3, size = 3) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Ground-truth vacancy rate by agreement bucket",
+       y = "ovs = 1 rate", x = NULL) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "vs_city_vpi_buckets.png"), bp,
+       width = 10, height = 5, dpi = 200)
+bp
+```
+
+## 9. Per-ZIP comparison
+
+```{r zip-compare}
+df$ours_bin <- p_ours_bin
+
+zip_compare <- df |>
+  filter(!is.na(zip_code)) |>
+  group_by(zip_code) |>
+  summarise(
+    n_parcels = n(),
+    n_ovs     = sum(ovs == 1),
+    n_vpi     = sum(vpi_flag),
+    n_ours    = sum(ours_bin),
+    tp_vpi    = sum(ovs == 1 & vpi_flag == 1),
+    tp_ours   = sum(ovs == 1 & ours_bin == 1),
+    .groups   = "drop"
+  ) |>
+  mutate(
+    precision_vpi  = ifelse(n_vpi > 0, tp_vpi / n_vpi, NA_real_),
+    precision_ours = ifelse(n_ours > 0, tp_ours / n_ours, NA_real_),
+    recall_vpi     = ifelse(n_ovs > 0, tp_vpi / n_ovs, NA_real_),
+    recall_ours    = ifelse(n_ovs > 0, tp_ours / n_ovs, NA_real_)
+  ) |>
+  filter(n_ovs >= 5) |>
+  arrange(desc(n_parcels))
+zip_compare |> head(15)
+```
+
+```{r zip-scatter, fig.width=14, fig.height=5}
+plot_metric <- function(metric) {
+  zip_compare |>
+    select(n_parcels,
+           vpi  = !!sym(paste0(metric, "_vpi")),
+           ours = !!sym(paste0(metric, "_ours"))) |>
+    drop_na() |>
+    ggplot(aes(vpi, ours, size = n_parcels)) +
+    geom_point(alpha = 0.7, color = "#1f77b4") +
+    geom_abline(linetype = "dashed", color = "gray") +
+    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+    labs(title = paste0(str_to_title(metric), " by ZIP"),
+         x = paste("City VPI", metric), y = paste("Our model", metric)) +
+    theme_minimal()
+}
+zp <- patchwork::wrap_plots(plot_metric("precision"), plot_metric("recall"),
+                            ncol = 2)
+ggsave(file.path(GRAPH_PATH, "vs_city_vpi_zip_scatter.png"), zp,
+       width = 14, height = 5, dpi = 200)
+zp
+```
+
+## 10. Map: where each model flags parcels
+
+```{r map-prep}
+# Pull centroids from the VPI sf
+vpi_xy <- vpi_sf |>
+  st_centroid() |>
+  mutate(parcel_number = str_trim(as.character(opa_id)),
+         lon = st_coordinates(geometry)[, 1],
+         lat = st_coordinates(geometry)[, 2]) |>
+  st_drop_geometry() |>
+  select(parcel_number, lon, lat) |>
+  filter(parcel_number != "", !is.na(parcel_number)) |>
+  distinct(parcel_number, .keep_all = TRUE)
+
+# Centroids from our predictions geojson if available
+preds_geo_path <- file.path(PY_PATH, "vacancy_predictions.geojson")
+xy_all <- vpi_xy
+if (file.exists(preds_geo_path)) {
+  need_ours <- df |> filter(bucket == "Only ours flags") |>
+    pull(parcel_number) |> setdiff(vpi_xy$parcel_number)
+  if (length(need_ours)) {
+    pred_sf <- st_read(preds_geo_path, quiet = TRUE) |>
+      mutate(parcel_number = str_trim(as.character(parcel_number))) |>
+      filter(parcel_number %in% need_ours) |>
+      st_centroid()
+    if (nrow(pred_sf) > 0) {
+      ours_xy <- pred_sf |>
+        mutate(lon = st_coordinates(geometry)[, 1],
+               lat = st_coordinates(geometry)[, 2]) |>
+        st_drop_geometry() |>
+        select(parcel_number, lon, lat)
+      xy_all <- bind_rows(vpi_xy, ours_xy) |>
+        distinct(parcel_number, .keep_all = TRUE)
+    }
+  }
+}
+
+df_map <- df |>
+  left_join(xy_all, by = "parcel_number") |>
+  filter(bucket %in% c("Both flag", "Only ours flags", "Only VPI flags"),
+         !is.na(lon), !is.na(lat))
+table(df_map$bucket)
+```
+
+```{r leaflet-map}
+BUCKET_COLOR <- c("Both flag" = "#7b3294",
+                  "Only ours flags" = "#1f78b4",
+                  "Only VPI flags" = "#e31a1c")
+
+m <- leaflet(df_map) |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  setView(lng = -75.1652, lat = 39.9526, zoom = 12)
+
+for (b in names(BUCKET_COLOR)) {
+  sub <- df_map |> filter(bucket == b)
+  if (nrow(sub)) {
+    m <- m |> addCircleMarkers(
+      data = sub, lng = ~lon, lat = ~lat,
+      radius = 3, color = BUCKET_COLOR[[b]], stroke = FALSE,
+      fillOpacity = 0.7, group = sprintf("%s (n=%d)", b, nrow(sub)),
+      popup = ~paste0("<b>Parcel:</b> ", parcel_number,
+                      "<br><b>Bucket:</b> ", b,
+                      "<br><b>ovs:</b> ", ovs,
+                      "<br><b>Our prob:</b> ", round(ensemble_prob, 3),
+                      "<br><b>VPI flag:</b> ", vpi_flag)
+    )
+  }
+}
+m <- m |> addLayersControl(
+  overlayGroups = sprintf("%s (n=%d)",
+                          names(BUCKET_COLOR),
+                          c(sum(df_map$bucket == "Both flag"),
+                            sum(df_map$bucket == "Only ours flags"),
+                            sum(df_map$bucket == "Only VPI flags"))),
+  options = layersControlOptions(collapsed = FALSE)
+)
+
+map_path <- file.path(OUT_PATH, "vs_city_vpi_map.html")
+htmlwidgets::saveWidget(m, map_path, selfcontained = TRUE)
+m
+```
+
+```{r static-map, fig.width=10, fig.height=11}
+df_map$bucket <- factor(df_map$bucket,
+                        levels = c("Only VPI flags", "Only ours flags", "Both flag"))
+sm <- ggplot(df_map, aes(lon, lat, color = bucket)) +
+  geom_point(size = 0.7, alpha = 0.55) +
+  scale_color_manual(values = BUCKET_COLOR) +
+  coord_equal() +
+  labs(title = "Final ensemble vs City VPI — flagged residential parcels") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "vs_city_vpi_map.png"), sm,
+       width = 10, height = 11, dpi = 200)
+sm
+```
+
+## 11. High-prob OVS=0 parcels (model FPs / unrecorded vacancies)
+
+```{r fp-map}
+TOP_N <- 1000L
+PROB_FLOOR <- 0.4
+
+fp <- df |>
+  filter(ovs == 0, ensemble_prob >= PROB_FLOOR) |>
+  arrange(desc(ensemble_prob)) |>
+  head(TOP_N) |>
+  left_join(xy_all, by = "parcel_number") |>
+  filter(!is.na(lon), !is.na(lat))
+cat(sprintf("High-prob OVS=0 mapped: %d\n", nrow(fp)))
+
+p_min <- min(fp$ensemble_prob); p_max <- max(fp$ensemble_prob)
+fp$radius <- 4 + 12 * (fp$ensemble_prob - p_min) / max(p_max - p_min, 1e-9)
+fp$color  <- ifelse(fp$vpi_flag == 1, "#7b3294", "#1f78b4")
+
+m_fp <- leaflet(fp) |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  setView(lng = -75.1652, lat = 39.9526, zoom = 12) |>
+  addCircleMarkers(
+    lng = ~lon, lat = ~lat, radius = ~radius,
+    color = ~color, stroke = TRUE, weight = 0.5,
+    fillOpacity = 0.55,
+    popup = ~paste0("<b>Parcel:</b> ", parcel_number,
+                    "<br><b>Our prob:</b> ", round(ensemble_prob, 3),
+                    "<br><b>OVS:</b> 0<br>",
+                    "<b>VPI flag:</b> ", vpi_flag)
+  )
+htmlwidgets::saveWidget(m_fp, file.path(OUT_PATH, "vs_city_vpi_high_prob_ovs0_map.html"),
+                        selfcontained = TRUE)
+m_fp
+```
+
+```{r fp-static, fig.width=10, fig.height=11}
+sp_fp <- ggplot(fp, aes(lon, lat, size = ensemble_prob, color = factor(vpi_flag))) +
+  geom_point(alpha = 0.55) +
+  scale_color_manual(values = c(`0` = "#1f78b4", `1` = "#7b3294")) +
+  coord_equal() +
+  labs(title = sprintf("Top %d high-prob OVS=0 parcels", nrow(fp))) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "vs_city_vpi_high_prob_ovs0_map.png"),
+       sp_fp, width = 10, height = 11, dpi = 200)
+sp_fp
+
+fp |> select(parcel_number, zip_code, category_code_description,
+             ovs, ensemble_prob, vpi_flag, build_rank, bucket, lon, lat) |>
+  write_csv(file.path(OUT_PATH, "vs_city_vpi_high_prob_ovs0.csv"))
+```
+
+## 12. Export
+
+```{r export}
+write_csv(compare,        file.path(OUT_PATH, "vs_city_vpi_headline.csv"))
+write_csv(bucket_summary, file.path(OUT_PATH, "vs_city_vpi_buckets.csv"))
+write_csv(zip_compare,    file.path(OUT_PATH, "vs_city_vpi_zip.csv"))
+df |> select(parcel_number, zip_code, category_code_description,
+             ovs, ensemble_prob, vpi_flag, build_rank, ours_bin, bucket) |>
+  write_csv(file.path(OUT_PATH, "vs_city_vpi_parcel.csv"))
+```

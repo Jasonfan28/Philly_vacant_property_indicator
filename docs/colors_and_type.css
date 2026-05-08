@@ -1,0 +1,410 @@
+/* ============================================================
+   Philly Stat 360 — Design Tokens
+   Based on City of Philadelphia Digital Standards
+   ============================================================ */
+
+/* ---- Fonts ---- */
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-Thin.ttf'); font-weight: 100; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-ThinItalic.ttf'); font-weight: 100; font-style: italic; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-ExtraLight.ttf'); font-weight: 200; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-ExtraLightItalic.ttf'); font-weight: 200; font-style: italic; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-Light.ttf'); font-weight: 300; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-LightItalic.ttf'); font-weight: 300; font-style: italic; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-Regular.ttf'); font-weight: 400; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-Italic.ttf'); font-weight: 400; font-style: italic; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-Medium.ttf'); font-weight: 500; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-MediumItalic.ttf'); font-weight: 500; font-style: italic; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-SemiBold.ttf'); font-weight: 600; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-SemiBoldItalic.ttf'); font-weight: 600; font-style: italic; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-Bold.ttf'); font-weight: 700; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-BoldItalic.ttf'); font-weight: 700; font-style: italic; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-ExtraBold.ttf'); font-weight: 800; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-ExtraBoldItalic.ttf'); font-weight: 800; font-style: italic; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-Black.ttf'); font-weight: 900; font-style: normal; }
+@font-face { font-family: 'Montserrat'; src: url('fonts/Montserrat-BlackItalic.ttf'); font-weight: 900; font-style: italic; }
+
+:root {
+
+  /* ============================================================
+     COLOR TOKENS
+     ============================================================ */
+
+  /* — Primary Blues — */
+  --dark-ben-franklin-blue: #0f4d90;   /* headings, primary button bg, dark heroes */
+  --ben-franklin-blue: #2176d2;        /* links, secondary buttons, mid-weight accents */
+  --light-ben-franklin: #96c9ff;       /* hover states, chart fills */
+  --light-blue: #daedfe;               /* subtle backgrounds, info callouts */
+  --electric-blue: #25cef7;            /* data viz highlight only; rarely for UI */
+
+  /* — Hero Accent — */
+  --bell-yellow: #f3c613;              /* CTA bg, left-border callouts, chart highlights */
+                                       /* NEVER with white text — fails WCAG AA */
+
+  /* — Secondary Accents (one at a time, sparingly) — */
+  --flyers-orange: #f99300;            /* warnings, attention */
+  --love-park-red: #cc3000;            /* errors, destructive actions, decline metrics */
+  --kelly-drive-green: #58c04d;        /* success, positive metrics */
+  --phanatic-green: #3a833c;           /* darker green when contrast matters */
+  --pride-purple: #9400c6;             /* categorical data viz only */
+
+  /* — Neutrals — */
+  --black: #000000;
+  --dark-gray: #444444;                /* body text */
+  --medium-gray: #a1a1a1;              /* disabled, hints, axis labels */
+  --sidewalk: #cfcfcf;                 /* borders */
+  --ghost-gray: #f0f0f0;              /* surface fills, callout backgrounds */
+  --white: #ffffff;
+
+  /* ============================================================
+     SEMANTIC COLOR ALIASES
+     ============================================================ */
+  --color-heading:       var(--dark-ben-franklin-blue);
+  --color-body:          var(--dark-gray);
+  --color-muted:         var(--medium-gray);
+  --color-border:        var(--sidewalk);
+  --color-surface:       var(--ghost-gray);
+  --color-bg:            var(--white);
+
+  --color-link:          var(--ben-franklin-blue);
+  --color-link-hover:    var(--dark-ben-franklin-blue);
+
+  --color-primary-btn-bg:    var(--ben-franklin-blue);
+  --color-primary-btn-text:  var(--white);
+  --color-cta-btn-bg:        var(--bell-yellow);
+  --color-cta-btn-text:      var(--dark-ben-franklin-blue);
+  --color-destructive-btn-bg: var(--love-park-red);
+
+  --color-success:       var(--kelly-drive-green);
+  --color-warning:       var(--flyers-orange);
+  --color-error:         var(--love-park-red);
+  --color-info:          var(--ben-franklin-blue);
+
+  --color-callout-border: var(--bell-yellow);
+  --color-callout-bg:    var(--ghost-gray);
+
+  --color-table-header-bg:   var(--dark-ben-franklin-blue);
+  --color-table-header-text: var(--white);
+  --color-table-row-odd:     #f7f7f7;
+  --color-table-row-even:    var(--white);
+
+  /* ============================================================
+     TYPOGRAPHY TOKENS
+     ============================================================ */
+
+  /* — Font Families — */
+  --font-heading:   'Montserrat', sans-serif;
+  --font-body:      'Open Sans', sans-serif;
+
+  /* — Font Weights — */
+  --fw-regular:     400;
+  --fw-semibold:    600;
+  --fw-bold:        700;
+  --fw-extrabold:   800;
+  --fw-black:       900;
+
+  /* — Type Scale — */
+  --text-h1:    40px;
+  --text-h2:    28px;
+  --text-h3:    20px;
+  --text-h4:    16px;
+  --text-body:  16px;
+  --text-small: 14px;
+  --text-xs:    13px;
+
+  /* — Line Heights — */
+  --lh-heading: 1.2;
+  --lh-body:    1.55;
+
+  /* — Letter Spacing — */
+  --ls-heading-tight: -0.3px;   /* h1, h2 */
+  --ls-button:         0.4px;   /* button uppercase labels */
+  --ls-table-header:   0.4px;   /* table th uppercase */
+
+  /* ============================================================
+     SEMANTIC TYPE ALIASES
+     ============================================================ */
+  --h1: var(--text-h1);
+  --h2: var(--text-h2);
+  --h3: var(--text-h3);
+  --h4: var(--text-h4);
+  --p:  var(--text-body);
+
+  /* ============================================================
+     SPACING SCALE
+     ============================================================ */
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* ============================================================
+     BORDER & RADIUS TOKENS
+     ============================================================ */
+  --radius-btn:    2px;
+  --radius-input:  2px;
+  --radius-card:   4px;
+  --radius-card-lg: 8px;
+
+  --border-default: 1px solid var(--sidewalk);
+  --border-focus:   2px solid var(--ben-franklin-blue);
+  --border-error:   2px solid var(--love-park-red);
+  --border-card-hover: 1px solid var(--ben-franklin-blue);
+  --border-callout: 4px solid var(--bell-yellow);
+
+  /* ============================================================
+     LAYOUT TOKENS
+     ============================================================ */
+  --max-content-width: 1200px;
+  --gutter-desktop: 32px;
+  --gutter-mobile:  16px;
+  --section-pad-desktop: 64px;
+  --section-pad-mobile:  40px;
+
+  /* ============================================================
+     ELEVATION (No shadows — borders only)
+     ============================================================ */
+  --shadow-none: none;  /* All elements use borders, never box-shadow */
+
+  /* ============================================================
+     DATA VIZ COLOR SEQUENCE
+     ============================================================ */
+  --viz-1: #0f4d90;   /* single series primary */
+  --viz-2: #2176d2;
+  --viz-3: #96c9ff;
+  --viz-4: #f3c613;
+  --viz-5: #f99300;
+  --viz-6: #58c04d;
+  --viz-positive: #58c04d;
+  --viz-negative: #cc3000;
+  --viz-gridline: #f0f0f0;
+}
+
+/* ============================================================
+   BASE ELEMENT STYLES
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--color-body);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  color: var(--color-heading);
+  line-height: var(--lh-heading);
+  margin: 0 0 0.5em;
+}
+
+h1 { font-size: var(--text-h1); font-weight: var(--fw-bold); letter-spacing: var(--ls-heading-tight); }
+h2 { font-size: var(--text-h2); font-weight: var(--fw-bold); letter-spacing: var(--ls-heading-tight); }
+h3 { font-size: var(--text-h3); font-weight: var(--fw-bold); }
+h4 { font-size: var(--text-h4); font-weight: var(--fw-bold); }
+
+p { margin: 0 0 1em; }
+
+a {
+  color: var(--color-link);
+  text-decoration: underline;
+}
+a:hover { color: var(--color-link-hover); }
+
+small { font-size: var(--text-small); }
+
+/* ============================================================
+   BUTTON BASE
+   ============================================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: var(--radius-btn);
+  font-family: var(--font-heading);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-button);
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.btn-primary   { background: var(--color-primary-btn-bg); color: var(--white); }
+.btn-primary:hover { background: #1a69c0; }
+
+.btn-secondary { background: var(--white); color: var(--ben-franklin-blue); border: 2px solid var(--ben-franklin-blue); }
+.btn-secondary:hover { background: var(--light-blue); }
+
+.btn-cta       { background: var(--color-cta-btn-bg); color: var(--color-cta-btn-text); }
+.btn-cta:hover { background: #e5bb10; }
+
+.btn-destructive { background: var(--love-park-red); color: var(--white); }
+.btn-destructive:hover { background: #b02900; }
+
+.btn-disabled, .btn:disabled {
+  background: var(--sidewalk);
+  color: var(--dark-gray);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ============================================================
+   CARD
+   ============================================================ */
+
+.card {
+  background: var(--white);
+  border: var(--border-default);
+  border-radius: var(--radius-card);
+  padding: 24px;
+}
+
+.card-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.card-clickable:hover { border-color: var(--ben-franklin-blue); }
+
+/* ============================================================
+   CALLOUT (Philly Signature)
+   ============================================================ */
+
+.callout {
+  background: var(--ghost-gray);
+  border-left: 4px solid var(--bell-yellow);
+  padding: 14px 16px;
+}
+.callout-info    { border-left-color: var(--ben-franklin-blue); }
+.callout-success { border-left-color: var(--kelly-drive-green); }
+.callout-warning { border-left-color: var(--flyers-orange); }
+.callout-error   { border-left-color: var(--love-park-red); }
+
+/* ============================================================
+   FORM ELEMENTS
+   ============================================================ */
+
+.form-label {
+  display: block;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  font-weight: var(--fw-semibold);
+  color: var(--dark-gray);
+  margin-bottom: 6px;
+}
+.form-label .required { color: var(--love-park-red); margin-left: 2px; }
+
+.form-input {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--sidewalk);
+  border-radius: var(--radius-input);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--dark-gray);
+  background: var(--white);
+  transition: border-color 0.15s ease;
+}
+.form-input:focus {
+  outline: none;
+  border: 2px solid var(--ben-franklin-blue);
+}
+.form-input.error { border: 2px solid var(--love-park-red); }
+
+.form-help  { font-size: var(--text-xs); color: var(--medium-gray); margin-top: 4px; }
+.form-error { font-size: var(--text-xs); color: var(--love-park-red); margin-top: 4px; }
+
+/* ============================================================
+   DATA TABLE
+   ============================================================ */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-body);
+}
+
+.data-table thead th {
+  background: var(--dark-ben-franklin-blue);
+  color: var(--white);
+  font-family: var(--font-heading);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-table-header);
+  padding: 12px 16px;
+  text-align: left;
+}
+.data-table thead th.numeric { text-align: right; }
+
+.data-table tbody td {
+  font-size: var(--text-small);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ghost-gray);
+  color: var(--dark-gray);
+}
+.data-table tbody td.numeric { text-align: right; }
+
+.data-table tbody tr:nth-child(odd)  { background: #f7f7f7; }
+.data-table tbody tr:nth-child(even) { background: var(--white); }
+.data-table tbody tr:hover           { background: var(--light-blue); }
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+
+.nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--white);
+  border-bottom: 1px solid var(--sidewalk);
+  padding: 0 32px;
+  height: 64px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-links a {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 16px;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--dark-gray);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.nav-links a:hover,
+.nav-links a.active {
+  color: var(--ben-franklin-blue);
+  border-bottom-color: var(--bell-yellow);
+}

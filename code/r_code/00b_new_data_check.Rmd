@@ -1,0 +1,161 @@
+---
+title: "New Data Quick Check"
+author: "PhillyStat360"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(scales)
+library(knitr)
+library(kableExtra)
+
+data_path <- "../rawdata/"
+```
+
+# 1. Real Estate Transfers
+
+```{r rtt-load}
+rtt <- read_csv(paste0(data_path, "RTT_SUMMARY.csv"), show_col_types = FALSE) %>%
+  janitor::clean_names()
+
+cat("Rows:", comma(nrow(rtt)), "\n")
+cat("Columns:", ncol(rtt), "\n")
+```
+
+```{r rtt-names}
+cat("All columns:\n")
+cat(paste(names(rtt), collapse = "\n"))
+```
+
+```{r rtt-head}
+glimpse(rtt)
+```
+
+```{r rtt-joinkey}
+# Confirm a join key exists and matches opa_properties_public
+properties <- read_csv(paste0(data_path, "opa_properties_public.csv"), show_col_types = FALSE) %>%
+  janitor::clean_names()
+
+# Find candidate join keys
+possible_keys <- names(rtt)[str_detect(tolower(names(rtt)), "opa|parcel|account")]
+cat("Possible join keys:", paste(possible_keys, collapse = ", "), "\n\n")
+
+if (length(possible_keys) > 0) {
+  for (k in possible_keys) {
+    match_rate <- mean(rtt[[k]] %in% properties$parcel_number, na.rm = TRUE)
+    cat(k, "→ match rate with properties:", percent(match_rate, accuracy = 0.1), "\n")
+  }
+}
+```
+
+```{r rtt-dates}
+# Find date columns
+date_cols <- names(rtt)[str_detect(tolower(names(rtt)), "date")]
+cat("Date columns:", paste(date_cols, collapse = ", "), "\n\n")
+
+if ("display_date" %in% names(rtt)) {
+  cat("Date range:", as.character(min(rtt$display_date, na.rm = TRUE)), 
+      "to", as.character(max(rtt$display_date, na.rm = TRUE)), "\n")
+}
+```
+
+```{r rtt-doctype}
+# Document type distribution (deed, mortgage, sheriff sale, etc.)
+if ("document_type" %in% names(rtt)) {
+  rtt %>%
+    count(document_type, sort = TRUE) %>%
+    head(15) %>%
+    kable(caption = "Top 15 document types") %>%
+    kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+}
+```
+
+---
+
+# 2. Building & Zoning Permits
+
+```{r permits-load}
+permits <- read_csv(paste0(data_path, "permits_2020.csv"), show_col_types = FALSE) %>%
+  janitor::clean_names()
+
+cat("Rows:", comma(nrow(permits)), "\n")
+cat("Columns:", ncol(permits), "\n")
+```
+
+```{r permits-names}
+cat("All columns:\n")
+cat(paste(names(permits), collapse = "\n"))
+```
+
+```{r permits-head}
+glimpse(permits)
+```
+
+```{r permits-joinkey}
+# Find join key
+possible_keys_p <- names(permits)[str_detect(tolower(names(permits)), "opa|parcel|account")]
+cat("Possible join keys:", paste(possible_keys_p, collapse = ", "), "\n\n")
+
+if (length(possible_keys_p) > 0) {
+  for (k in possible_keys_p) {
+    match_rate <- mean(permits[[k]] %in% properties$parcel_number, na.rm = TRUE)
+    cat(k, "→ match rate with properties:", percent(match_rate, accuracy = 0.1), "\n")
+  }
+}
+```
+
+```{r permits-dates}
+date_cols_p <- names(permits)[str_detect(tolower(names(permits)), "date")]
+cat("Date columns:", paste(date_cols_p, collapse = ", "), "\n\n")
+
+if ("permitissuedate" %in% names(permits)) {
+  cat("Date range:", as.character(min(permits$permitissuedate, na.rm = TRUE)),
+      "to", as.character(max(permits$permitissuedate, na.rm = TRUE)), "\n")
+}
+```
+
+```{r permits-type}
+# Permit type distribution — VacancyGuide uses demolition, new construction, plumbing, etc.
+if ("permittype" %in% names(permits)) {
+  permits %>%
+    count(permittype, sort = TRUE) %>%
+    kable(caption = "Permit types") %>%
+    kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+}
+```
+
+```{r permits-status}
+# Status distribution
+if ("status" %in% names(permits)) {
+  permits %>%
+    count(status, sort = TRUE) %>%
+    kable(caption = "Permit status") %>%
+    kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+}
+```
+
+```{r permits-typeofwork}
+# Type of work — VacancyGuide uses 'new construction', 'addition and/or alteration'
+if ("typeofwork" %in% names(permits)) {
+  permits %>%
+    count(typeofwork, sort = TRUE) %>%
+    head(15) %>%
+    kable(caption = "Top 15 types of work") %>%
+    kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+}
+```
+
+---
+
+# 3. Summary
+
+```{r summary}
+cat("=== Data Inventory Update ===\n\n")
+cat("Real Estate Transfers:", comma(nrow(rtt)), "records\n")
+cat("Permits (2020+):", comma(nrow(permits)), "records\n\n")
+cat("Both datasets loaded successfully.\n")
+cat("Next: integrate into 05_feature_engineering.Rmd\n")
+```

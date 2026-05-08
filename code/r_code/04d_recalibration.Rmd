@@ -1,0 +1,142 @@
+---
+title: "PhillyStat360 — 04d: Recalibration on a held-out fold (R port)"
+output: html_document
+---
+
+R port of `code/python/04d_recalibration.ipynb`. Refits isotonic on a held-out
+half of the test split.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(yardstick)
+})
+
+ROOT       <- here::here()
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+SEED <- 42
+```
+
+## 1. Load predictions
+
+```{r load}
+preds <- read_csv(file.path(PY_PATH, "all_predictions_rf.csv"),
+                  show_col_types = FALSE) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number)))
+cat("Total parcels:", nrow(preds), "\n")
+print(table(preds$data_split))
+stopifnot(all(c("ensemble_prob_raw", "ensemble_prob", "ovs",
+                "data_split") %in% names(preds)))
+```
+
+## 2. Split test into calibration and evaluation halves
+
+```{r split-test}
+set.seed(SEED)
+test <- preds |> filter(data_split == "test") |> slice_sample(prop = 1)
+half <- floor(nrow(test) / 2)
+cal_set  <- test[1:half, ]
+eval_set <- test[(half + 1):nrow(test), ]
+cat(sprintf("Cal: %d (%.4f%%) | Eval: %d (%.4f%%)\n",
+            nrow(cal_set), 100 * mean(cal_set$ovs),
+            nrow(eval_set), 100 * mean(eval_set$ovs)))
+```
+
+## 3. Fit isotonic on calibration half
+
+```{r fit-iso}
+fit_isotonic <- function(x, y) {
+  ord <- order(x)
+  iso <- isoreg(x[ord], y[ord])
+  approxfun(x[ord], iso$yf, rule = 2, ties = "ordered")
+}
+
+iso_v2 <- fit_isotonic(cal_set$ensemble_prob_raw, cal_set$ovs)
+eval_set$ensemble_prob_v2 <- pmin(pmax(iso_v2(eval_set$ensemble_prob_raw), 0), 1)
+
+eval_set |> select(ensemble_prob, ensemble_prob_v2) |>
+  summarise(across(everything(),
+                   list(mean = mean, sd = sd, min = min, max = max)))
+```
+
+## 4. Reliability curves
+
+```{r reliability, fig.width=7, fig.height=6}
+reliability <- function(probs, y, n_bins = 10) {
+  bin <- ntile(probs, n_bins)
+  tibble(probs = probs, y = y, bin = bin) |>
+    group_by(bin) |>
+    summarise(mean_prob = mean(probs),
+              frac_pos  = mean(y),
+              n         = n(),
+              .groups   = "drop")
+}
+
+rel_old <- reliability(eval_set$ensemble_prob,    eval_set$ovs)
+rel_new <- reliability(eval_set$ensemble_prob_v2, eval_set$ovs)
+
+rel_combined <- bind_rows(
+  rel_old |> mutate(version = "Original (test-fit)"),
+  rel_new |> mutate(version = "Recalibrated (held-out)")
+)
+
+rel_p <- ggplot(rel_combined, aes(mean_prob, frac_pos, color = version)) +
+  geom_abline(linetype = "dashed", color = "gray") +
+  geom_line() + geom_point(size = 3) +
+  scale_color_manual(values = c("Original (test-fit)" = "#d62728",
+                                "Recalibrated (held-out)" = "#1f77b4")) +
+  labs(title = "Reliability curve — eval half (equal-frequency bins)",
+       x = "Mean predicted probability", y = "Observed vacancy rate") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "recalibration_reliability.png"),
+       rel_p, width = 7, height = 6, dpi = 200)
+rel_p
+```
+
+## 5. Headline metrics
+
+```{r metrics}
+metrics_calc <- function(p, y) {
+  list(
+    auc = as.numeric(yardstick::roc_auc_vec(
+      factor(y, levels = c(1, 0)), p, event_level = "first")),
+    brier = mean((y - p)^2),
+    mean_pred = mean(p),
+    obs_rate = mean(y),
+    ratio = mean(p) / mean(y)
+  )
+}
+
+m_old <- metrics_calc(eval_set$ensemble_prob,    eval_set$ovs)
+m_new <- metrics_calc(eval_set$ensemble_prob_v2, eval_set$ovs)
+
+m <- bind_rows(
+  c(version = "original",     m_old),
+  c(version = "recalibrated", m_new)
+)
+print(m)
+cat(sprintf("Mean-pred / obs ratio: %.2fx → %.2fx\n",
+            m_old$ratio, m_new$ratio))
+```
+
+## 6. Apply to full population & export
+
+```{r export}
+preds$ensemble_prob_v2 <- pmin(pmax(iso_v2(preds$ensemble_prob_raw), 0), 1)
+
+saveRDS(list(isotonic_v2 = iso_v2,
+             fit_on = "random half of data_split=='test', seed=42",
+             eval_metrics = list(original = m_old, recalibrated = m_new)),
+        file.path(OUT_PATH, "calibrators_v2.rds"))
+
+preds |> select(parcel_number, data_split, ovs,
+                ensemble_prob_raw, ensemble_prob, ensemble_prob_v2) |>
+  write_csv(file.path(OUT_PATH, "predictions_calibrated.csv"))
+```

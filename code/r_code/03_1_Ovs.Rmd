@@ -1,0 +1,264 @@
+---
+title: "PhillyStat360 — 03a: OVS Construction"
+author: "MUSA Practicum Team"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    code_folding: show
+---
+
+## 0. Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(janitor)
+library(knitr)
+library(kableExtra)
+library(scales)
+library(patchwork)
+library(sf)
+library(lubridate)
+library(broom)
+library(pROC)
+library(caret)
+
+data_path  <- "../rawdata/"
+out_path   <- "../data/"
+graph_path <- "../graphs/"
+
+dir.create(out_path,   showWarnings = FALSE, recursive = TRUE)
+dir.create(graph_path, showWarnings = FALSE, recursive = TRUE)
+
+# Temporal Anchor: All predictive variables must strictly precede this date
+TRAIN_CUTOFF  <- as.Date("2025-10-01")
+RECENT_WINDOW <- TRAIN_CUTOFF - months(6)
+```
+
+---
+
+## 1. load data
+
+```{r read-data, cache=TRUE}
+properties <- read_csv(paste0(data_path, "opa_properties_public.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+clean_seal  <- read_csv(paste0(data_path, "clean_seal.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+violations  <- read_csv(paste0(data_path, "violations.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+licenses    <- read_csv(paste0(data_path, "business_licenses.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+unsafe      <- read_csv(paste0(data_path, "unsafe.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+imm_dang    <- read_csv(paste0(data_path, "imm_dang.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+parcel_sf   <- st_read(paste0(data_path, "PWD_PARCELS.geojson"),
+                       quiet = TRUE) %>% clean_names()
+permits    <- read_csv(paste0(data_path, "permits_2020.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+
+# Load VIOLATION_DEFINITION.csv if available for tier mapping display
+violation_def_path <- paste0(data_path, "VIOLATION_DEFINITION.csv")
+if (file.exists(violation_def_path)) {
+  violation_def <- read_csv(violation_def_path, show_col_types = FALSE) %>%
+    clean_names()
+} else {
+  violation_def <- NULL
+  message("VIOLATION_DEFINITION.csv not found; skipping code title display.")
+}
+
+cat("properties:", comma(nrow(properties)), "\n")
+cat("clean_seal:", comma(nrow(clean_seal)), "\n")
+cat("violations:", comma(nrow(violations)), "\n")
+cat("licenses:  ", comma(nrow(licenses)),   "\n")
+cat("unsafe:    ", comma(nrow(unsafe)),     "\n")
+cat("permits:   ", comma(nrow(permits)),    "\n")
+cat("imm_dang:  ", comma(nrow(imm_dang)),   "\n")
+cat("parcel_sf: ", comma(nrow(parcel_sf)),  "\n")
+```
+
+---
+
+## 2. Construct OVS (Observed Vacancy Status)
+
+Following the VacancyGuide2026 methodology, OVS=1 if any of the following are met:
+
+- **Source 1: Clean & Seal** — Property appears in L&I Clean & Seal records
+- **Source 2: Vacant Violations** — Has vacancy-related violation codes with status = 'OPEN'.
+- **Source 3: Vacant License** — Holds an active vacant property license (Residential 3219 or Commercial 3634).
+
+### 2a. Source 1 — Clean & Seal
+
+```{r ovs-cleanseal}
+# Identify parcels with completed demolition permits following a Clean & Seal event
+demo_after_seal <- clean_seal %>%
+  filter(!is.na(opa_account_num)) %>%
+  select(opa_account_num, casecreateddate) %>%
+  inner_join(
+    permits %>%
+      filter(tolower(permittype) == "demolition",
+             !is.na(permitcompleteddate),
+             tolower(status) == "completed") %>%
+      select(opa_account_num, permitcompleteddate),
+    by = "opa_account_num"
+  ) %>%
+  filter(permitcompleteddate > casecreateddate) %>%
+  distinct(opa_account_num)
+
+cs_parcels <- clean_seal %>%
+  filter(!is.na(opa_account_num)) %>%
+  # Fichman fix 1: within a 2 year window
+  filter(casecreateddate >= (TRAIN_CUTOFF - lubridate::years(2))) %>%
+  # Fichman fix 2: demolition after clean and seal = empty lot
+  anti_join(demo_after_seal, by = "opa_account_num") %>%
+  distinct(opa_account_num) %>%
+  mutate(ovs_clean_seal = 1)
+
+cat("Unique Clean & Seal parcels (2yr window + demolition filter):", comma(nrow(cs_parcels)), "\n")
+```
+
+### 2b. Source 2 — Open Vacant Violations
+
+```{r ovs-violations}
+# 11 vacancy violation codes used for OVS definition (not used as predictors)
+ovs_viol_codes <- c(
+  "9-3904", "9-3905", "PM15-901.1", "PM15-901.2", "PM15-301",
+  "CP-102",  "CP-103", "PM-102.4/1", "PM-102.4/2",
+  "PM-102.4/3", "PM-102.4/4"
+)
+
+viol_parcels <- violations %>%
+  filter(violationcode %in% ovs_viol_codes,
+         tolower(violationstatus) == "open") %>%
+  distinct(opa_account_num) %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(ovs_violation = 1)
+
+cat("Parcels with OPEN vacant violations:", comma(nrow(viol_parcels)), "\n")
+
+violations %>%
+  filter(violationcode %in% ovs_viol_codes,
+         tolower(violationstatus) == "open") %>%
+  count(violationcode, sort = TRUE) %>%
+  kable(caption = "Distribution of OPEN Vacant Violation Codes") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+### 2c. Source 3 — Active Vacant License
+
+```{r ovs-license}
+# 3219 = Residential Vacant, 3634 = Commercial Vacant
+vacant_license_parcels <- licenses %>%
+  filter(tolower(licensestatus) == "active",
+         revenuecode %in% c("3219", "3634")) %>%
+  distinct(opa_account_num) %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(ovs_license = 1)
+
+cat("Parcels with active vacant licenses:", comma(nrow(vacant_license_parcels)), "\n")
+```
+
+### 2d. Merge OVS to Properties
+
+```{r ovs-merge}
+ovs_df <- properties %>%
+  select(parcel_number, location, owner_1, category_code, category_code_description,
+         year_built, total_livable_area, market_value, sale_date, sale_price,
+         exterior_condition, interior_condition,
+         zoning, zip_code, census_tract) %>%
+  left_join(cs_parcels,             by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(viol_parcels,           by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(vacant_license_parcels, by = c("parcel_number" = "opa_account_num")) %>%
+  replace_na(list(ovs_clean_seal = 0, ovs_violation = 0, ovs_license = 0)) %>%
+  mutate(
+    ovs         = if_else(ovs_clean_seal == 1 | ovs_violation == 1 | ovs_license == 1, 1, 0),
+    ovs_sources = ovs_clean_seal + ovs_violation + ovs_license
+  )
+
+cat("Total parcels:", comma(nrow(ovs_df)), "\n")
+cat("OVS=1:  ", comma(sum(ovs_df$ovs == 1)),
+    "(", percent(mean(ovs_df$ovs), 0.1), ")\n")
+cat("OVS=0:  ", comma(sum(ovs_df$ovs == 0)), "\n")
+```
+
+### 2e. Filter for Residential + Join Geometry
+
+Includes: Single Family (1), Multi-Family (2), Mixed (3), Large Apartments > 4 units (14).
+
+```{r filter-attach}
+ovs_df <- ovs_df %>%
+  filter(category_code %in% c("1", "2", "3", "14")) %>%
+  left_join(
+    parcel_sf %>% select(brt_id, bldg_desc, shape_area, shape_length, geometry),
+    by = c("parcel_number" = "brt_id")
+  ) %>%
+  st_as_sf()
+
+cat("Post-filter parcels:", comma(nrow(ovs_df)), "\n")
+cat("OVS=1:", comma(sum(ovs_df$ovs == 1)),
+    "(", percent(mean(ovs_df$ovs), 0.1), ")\n")
+```
+
+### 2f. OVS Source Overlap Analysis
+
+```{r ovs-overlap}
+ovs_positive <- ovs_df %>% filter(ovs == 1)
+
+cat("=== OVS=1 Source Breakdown ===\n")
+cat("Clean & Seal Only:", comma(sum(ovs_positive$ovs_clean_seal==1 & ovs_positive$ovs_violation==0 & ovs_positive$ovs_license==0)), "\n")
+cat("Violation Only:   ", comma(sum(ovs_positive$ovs_clean_seal==0 & ovs_positive$ovs_violation==1 & ovs_positive$ovs_license==0)), "\n")
+cat("License Only:     ", comma(sum(ovs_positive$ovs_clean_seal==0 & ovs_positive$ovs_violation==0 & ovs_positive$ovs_license==1)), "\n")
+cat("Two-source overlap:       ", comma(sum(ovs_positive$ovs_sources == 2)), "\n")
+cat("Three-source overlap:       ", comma(sum(ovs_positive$ovs_sources == 3)), "\n")
+```
+
+```{r ovs-overlap-plot, fig.width=8, fig.height=5}
+p_combo <- ovs_positive %>%
+  st_drop_geometry() %>%
+  mutate(source_combo = case_when(
+    ovs_clean_seal==1 & ovs_violation==1 & ovs_license==1 ~ "All Three",
+    ovs_clean_seal==1 & ovs_violation==1 ~ "Clean&Seal + Violation",
+    ovs_clean_seal==1 & ovs_license==1   ~ "Clean&Seal + License",
+    ovs_violation==1  & ovs_license==1   ~ "Violation + License",
+    ovs_clean_seal==1 ~ "Clean & Seal Only",
+    ovs_violation==1  ~ "Violation Only",
+    ovs_license==1    ~ "License Only"
+  )) %>%
+  count(source_combo, sort = TRUE) %>%
+  ggplot(aes(x = reorder(source_combo, n), y = n)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Distribution of OVS=1 Parcels by Source Combination", x = NULL, y = "parcel count") +
+  theme_minimal()
+
+p_combo
+ggsave(paste0(graph_path, "ovs_combination_plot.png"),
+       plot = p_combo, width = 10, height = 6, dpi = 300)
+```
+
+---
+
+## 3. Export
+
+```{r export-ovs}
+# Drop geometry for downstream flat-file use in 03_analysis and 03_features
+ovs_df %>%
+  st_drop_geometry() %>%
+  write_csv(paste0(out_path, "ovs_residential.csv"))
+
+cat("Exported: ovs_residential.csv —", comma(nrow(ovs_df)), "rows\n")
+cat("OVS=1:", comma(sum(ovs_df$ovs == 1)),
+    "(", percent(mean(ovs_df$ovs), 0.1), ")\n")
+cat("Columns:", ncol(ovs_df) - 1, "(geometry dropped)\n")
+```
+
+---

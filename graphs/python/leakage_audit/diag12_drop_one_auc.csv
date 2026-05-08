@@ -1,0 +1,4 @@
+step,n_features,test_auc,auc_drop_from_A
+A: full leaky feature set,45,0.8925,0.0
+B: A minus rule-4 (has_unsafe / n_unsafe / has_imd / n_imd),41,0.8926,-0.0001
+C: B minus all-time C&S history,38,0.8547,0.0377

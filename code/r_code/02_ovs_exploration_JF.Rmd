@@ -1,0 +1,770 @@
+---
+title: "PhillyStat360 - OVS Exploratory Analysis & Parcel Drill-Down"
+author: "MUSA Practicum Team"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## 0. Setup
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(knitr)
+library(scales)
+library(patchwork)
+library(sf)
+library(tigris)
+
+data_path <- "../rawdata/"
+```
+
+
+## 1. Load Data
+
+```{r read-data, cache=TRUE}
+# Primary table: all Philadelphia parcels
+properties <- read_csv(paste0(data_path, "opa_properties_public.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+
+# Three core OVS sources
+clean_seal <- read_csv(paste0(data_path, "clean_seal.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+
+violations <- read_csv(paste0(data_path, "violations.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+
+licenses <- read_csv(paste0(data_path, "business_licenses.csv"),
+                     show_col_types = FALSE) %>% clean_names()
+
+permits <- read_csv(paste0(data_path, "permits.csv"),
+                   show_col_types = FALSE) %>% clean_names()
+
+# Supplementary tables
+unsafe <- read_csv(paste0(data_path, "unsafe.csv"),
+                   show_col_types = FALSE) %>% clean_names()
+
+imm_dang <- read_csv(paste0(data_path, "imm_dang.csv"),
+                     show_col_types = FALSE) %>% clean_names()
+
+cat("properties:", comma(nrow(properties)), "rows\n")
+cat("clean_seal:", comma(nrow(clean_seal)), "rows\n")
+cat("violations:", comma(nrow(violations)), "rows\n")
+cat("licenses:", comma(nrow(licenses)), "rows\n")
+cat("unsafe:", comma(nrow(unsafe)), "rows\n")
+cat("imm_dang:", comma(nrow(imm_dang)), "rows\n")
+```
+
+```{r pwd parcels}
+#adding in pwd parcels instead (seen as the gold standard for parcels and also has geog)
+parcel_sf <- st_read(
+  paste0(data_path,"PWD_PARCELS.geojson"),quiet = TRUE) %>% clean_names()
+cat("parcel_sf:", comma(nrow(parcel_sf)), "rows\n")
+
+```
+
+
+## 2. Constructing the Observed Vacancy Status (OVS)
+
+Based on the VacancyGuide2026 methodology and client kickoff meeting, a parcel is classified as OVS=1 (observed vacant) if it meets **any** of the following criteria:
+
+- **Source 1: Clean & Seal** — Property appears in the L+I Clean & Seal records (government-sealed dangerous building)
+- **Source 2: Vacant Violations** — Property has specific vacancy-related violation codes with status = 'OPEN'
+- **Source 3: Vacant License** — Property holds an active Vacant Property license
+
+#violations
+violationcode IN ('PM15-304.10', 'PM15-304.11', 'PM15-304.19', 'PM15-304.19O', 'PM15-304.2', 'PM15-304.8', 'PM15-308.1', 'PM15-309.1', 'PM15-309.3', 'PM15-309.4', 'PM-302.2/1', 'PM-302.2/2', 'PM-302.3/1', 'PM-302.4/6', 'PM-302.4/7', 'PM-304.1/1', 'PM-304.6/1', 'PM-304.8/1', 'PM-304.8/15', 'PM-304.8/16', 'PM-304.8/17', 'PM-304.8/18', 'PM-304.8/19', 'PM-304.8/2', 'PM-304.8/20', 'PM-304.8/21')
+```{r}
+#target violation codes
+target_codes <- c(
+  'PM15-304.10', 'PM15-304.11', 'PM15-304.19', 'PM15-304.19O', 'PM15-304.2', 'PM15-304.8', 'PM15-308.1', 'PM15-309.1', 'PM15-309.3', 'PM15-309.4', 'PM-302.2/1', 'PM-302.2/2', 'PM-302.3/1', 'PM-302.4/6', 'PM-302.4/7', 'PM-304.1/1', 'PM-304.6/1', 'PM-304.8/1', 'PM-304.8/15', 'PM-304.8/16', 'PM-304.8/17', 'PM-304.8/18', 'PM-304.8/19', 'PM-304.8/2', 'PM-304.8/20', 'PM-304.8/21'
+)
+
+#Check for open violations from the list
+violation_scores <- violations %>%
+  filter(
+    violationcode %in% target_codes,
+    tolower(violationstatus) == 'open'
+  ) %>%
+  group_by(opa_account_num) %>%
+  summarise(violation_points = 1) %>%
+  ungroup()
+
+```
+
+('9-3905', 'CP-103', 'PM-102.4/2', 'PM-102.4/4', 'PM15-108.1', 'PM15-108.2', 'PM15-109.1', 'PM15-110.1', 'PM15-301', 'PM15-304.1', 'PM15-304.19V', 'PM15-304.1A', 'PM15-304.1B', 'PM15-304.1C', 'PM15-304.1D', 'PM15-304.1E', 'PM15-304.1F', 'PM15-304.1G', 'PM15-304.1H', 'PM15-304.1I', 'PM15-304.1J', 'PM15-901.1', 'PM15-901.2', 'PM15-902.1', 'PM-304.4/1', 'PM-306.0/1', 'PM-306.0/90', 'PM-306.2/1', 'PM-306.2/4', 'PM-306.2/90', 'PM-306.2/91', 'PM-306.2/92', 'PM-307.1/1', 'PM-307.1/12', 'PM-307.1/13', 'PM-307.1/19', 'PM-307.1/3', 'PM-307.1/4', 'PM-307.1/5', 'PM-307.1/6', 'PM-307.1/7', 'PM-307.1/8', 'PM-307.1/9', 'PM-307.1/90', 'PM-307.2/1', 'PM-307.3/1', 'PM-307.3/2', 'PM-307.3/90', 'PM-307.3/91', 'PM-308.1/1', 'PM-308.1/10', 'PM-308.1/11', 'PM-308.1/12', 'PM-308.1/2', 'PM-308.1/3', 'PM-308.1/4', 'PM-308.1/5', 'PM-308.1/6', 'PM-308.1/7', 'PM-308.1/8', 'PM-308.1/9', ‘PM-307.1/2’, ‘PM-307.1/11')
+
+```{r}
+target_codes <- c(
+'9-3905', 'CP-103', 'PM-102.4/2', 'PM-102.4/4', 'PM15-108.1', 'PM15-108.2', 'PM15-109.1', 'PM15-110.1', 'PM15-301', 'PM15-304.1', 'PM15-304.19V', 'PM15-304.1A', 'PM15-304.1B', 'PM15-304.1C', 'PM15-304.1D', 'PM15-304.1E', 'PM15-304.1F', 'PM15-304.1G', 'PM15-304.1H', 'PM15-304.1I', 'PM15-304.1J', 'PM15-901.1', 'PM15-901.2', 'PM15-902.1', 'PM-304.4/1', 'PM-306.0/1', 'PM-306.0/90', 'PM-306.2/1', 'PM-306.2/4', 'PM-306.2/90', 'PM-306.2/91', 'PM-306.2/92', 'PM-307.1/1', 'PM-307.1/12', 'PM-307.1/13', 'PM-307.1/19', 'PM-307.1/3', 'PM-307.1/4', 'PM-307.1/5', 'PM-307.1/6', 'PM-307.1/7', 'PM-307.1/8', 'PM-307.1/9', 'PM-307.1/90', 'PM-307.2/1', 'PM-307.3/1', 'PM-307.3/2', 'PM-307.3/90', 'PM-307.3/91', 'PM-308.1/1', 'PM-308.1/10', 'PM-308.1/11', 'PM-308.1/12', 'PM-308.1/2', 'PM-308.1/3', 'PM-308.1/4', 'PM-308.1/5', 'PM-308.1/6', 'PM-308.1/7', 'PM-308.1/8', 'PM-308.1/9', 'PM-307.1/2', 'PM-307.1/11'
+)
+```
+
+
+
+#Permits
+```{r}
+permit_summary <- permits %>%
+  filter(!is.na(permitcompleteddate)) %>%
+  group_by(property_id) %>%
+  summarise(
+    last_demo_date = max(permitcompleteddate[str_detect(tolower(permittype), "demolition")], na.rm = TRUE),
+    last_new_con_date = max(permitcompleteddate[str_detect(tolower(permittype), "new construction")], na.rm = TRUE)
+  ) %>%
+  mutate(
+    last_demo_date = if_else(is.infinite(last_demo_date), as.Date(NA), last_demo_date),
+    last_new_con_date = if_else(is.infinite(last_new_con_date), as.Date(NA), last_new_con_date)
+  )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+______
+
+### 2a. Source 1: Clean & Seal Parcels
+
+```{r ovs-cleanseal}
+cs_parcels <- clean_seal %>%
+  filter(!is.na(opa_account_num)) %>%
+  distinct(opa_account_num) %>%
+  mutate(ovs_clean_seal = 1)
+
+cat("Distinct parcels in Clean & Seal:", comma(nrow(cs_parcels)), "\n")
+```
+
+### 2b. Source 2: Vacant Violations (Currently OPEN)
+
+Per VacancyGuide, only violations with `violationstatus = 'OPEN'` are considered.
+
+```{r ovs-violations}
+# Vacancy-related violation codes per VacancyGuide2026
+vacant_viol_codes <- c(
+  "9-3904",     # Vacant Lot License
+  "9-3905",     # Vacant Structure License
+  "PM15-901.1", # Vacant & Open Properties
+  "PM15-901.2", # Vacant Properties - Blighted Condition
+  "PM15-301",   # Vacant Structure & Land
+  "CP-102",     # License - Vacant Lot
+  "CP-103",     # License - Vacant Building
+  "PM-102.4/1", # License - Vac Lot
+  "PM-102.4/2", # License - Vac Res Bldg
+  "PM-102.4/3", # License - Vac Wharf/Pier
+  "PM-102.4/4"  # License - Vac Comm Bldg
+)
+
+viol_parcels <- violations %>%
+  filter(violationcode %in% vacant_viol_codes,
+         tolower(violationstatus) == "open") %>%
+  distinct(opa_account_num) %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(ovs_violation = 1)
+
+cat("Distinct parcels with OPEN vacant violations:", comma(nrow(viol_parcels)), "\n")
+
+# Distribution of OPEN vacant violation codes
+violations %>%
+  filter(violationcode %in% vacant_viol_codes,
+         tolower(violationstatus) == "open") %>%
+  count(violationcode, sort = TRUE) %>%
+  kable(caption = "Distribution of Currently OPEN Vacant Violation Codes")
+```
+
+### 2c. Source 3: Active Vacant License
+
+```{r ovs-license}
+# Per VacancyGuide: licensestatus = 'Active' AND revenuecode IN ('3219', '3634')
+# 3219 = Residential Vacant License, 3634 = Vacant Commercial Property
+vacant_license_parcels <- licenses %>%
+  filter(tolower(licensestatus) == "active",
+         revenuecode %in% c("3219")) %>%
+  distinct(opa_account_num) %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(ovs_license = 1)
+
+cat("Distinct parcels with Active Vacant License:", comma(nrow(vacant_license_parcels)), "\n")
+```
+
+### 2d. Merging OVS onto Properties
+
+```{r ovs-merge}
+ovs_df <- properties %>%
+  select(parcel_number, location, owner_1, category_code, category_code_description,
+         year_built, total_livable_area, market_value, sale_date, sale_price,
+         exterior_condition, interior_condition, zoning, zip_code, census_tract) %>%
+  left_join(cs_parcels, by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(viol_parcels, by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(vacant_license_parcels, by = c("parcel_number" = "opa_account_num")) %>%
+  replace_na(list(ovs_clean_seal = 0, ovs_violation = 0, ovs_license = 0)) %>%
+  mutate(
+    ovs = if_else(ovs_clean_seal == 1 | ovs_violation == 1 | ovs_license == 1, 1, 0),
+    ovs_sources = ovs_clean_seal + ovs_violation + ovs_license
+  )
+
+cat("Total parcels:", comma(nrow(ovs_df)), "\n")
+cat("OVS=1 (Observed Vacant):", comma(sum(ovs_df$ovs == 1)), "\n")
+cat("OVS=0:", comma(sum(ovs_df$ovs == 0)), "\n")
+cat("Vacancy rate:", percent(mean(ovs_df$ovs), accuracy = 0.1), "\n")
+```
+
+## 3. Exploratory Analysis Around OVS
+
+#cleaning data
+
+only want single family(1), apartments>4units(14), multi-family (2), mixed use(3). the rest of them are irrelevant to our analysis on properties. 
+
+```{r}
+ovs_df <- ovs_df %>% 
+  filter(category_code %in% c("1","2","3","14"))
+```
+
+inner join
+```{r}
+ovs_df <- ovs_df %>% 
+  left_join(
+  parcel_sf %>% select(brt_id, bldg_desc, shape_area, shape_length, geometry), by = c("parcel_number" = "brt_id")
+) %>% 
+  st_as_sf()
+  
+#glimpse(ovs_spatial)
+```
+
+
+```{r}
+cat("Total parcels:", comma(nrow(ovs_df)), "\n")
+cat("OVS=1 (Observed Vacant):", comma(sum(ovs_df$ovs == 1)), "\n")
+cat("OVS=0:", comma(sum(ovs_df$ovs == 0)), "\n")
+cat("Vacancy rate:", percent(mean(ovs_df$ovs), accuracy = 0.1), "\n")
+```
+
+
+### 3a. OVS Source Overlap
+
+How much do the three sources agree? Are parcels typically flagged by one source or multiple?
+
+```{r ovs-overlap}
+ovs_positive <- ovs_df %>% filter(ovs == 1)
+
+cat("=== OVS=1 Source Breakdown ===\n")
+cat("Clean & Seal only:", comma(sum(ovs_positive$ovs_clean_seal == 1 & ovs_positive$ovs_violation == 0 & ovs_positive$ovs_license == 0)), "\n")
+cat("Violation only:", comma(sum(ovs_positive$ovs_clean_seal == 0 & ovs_positive$ovs_violation == 1 & ovs_positive$ovs_license == 0)), "\n")
+cat("License only:", comma(sum(ovs_positive$ovs_clean_seal == 0 & ovs_positive$ovs_violation == 0 & ovs_positive$ovs_license == 1)), "\n")
+cat("Two sources overlap:", comma(sum(ovs_positive$ovs_sources == 2)), "\n")
+cat("All three sources:", comma(sum(ovs_positive$ovs_sources == 3)), "\n")
+```
+
+```{r ovs-overlap-plot, fig.width=8, fig.height=5}
+ovs_combo <- ovs_positive %>%
+  mutate(source_combo = case_when(
+    ovs_clean_seal == 1 & ovs_violation == 1 & ovs_license == 1 ~ "All Three",
+    ovs_clean_seal == 1 & ovs_violation == 1 ~ "Clean&Seal + Violation",
+    ovs_clean_seal == 1 & ovs_license == 1 ~ "Clean&Seal + License",
+    ovs_violation == 1 & ovs_license == 1 ~ "Violation + License",
+    ovs_clean_seal == 1 ~ "Clean & Seal Only",
+    ovs_violation == 1 ~ "Violation Only",
+    ovs_license == 1 ~ "License Only"
+  )) %>%
+  count(source_combo, sort = TRUE) %>%
+  ggplot(aes(x = reorder(source_combo, n), y = n)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  labs(title = "OVS=1 Parcels by Source Combination",
+       x = NULL, y = "Number of Parcels") +
+  theme_minimal() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+ovs_combo
+
+ggsave("ovs_combination_plot.png", plot = ovs_combo, width = 10, height = 6, dpi = 300)
+```
+
+### 3b. OVS vs. Property Characteristics
+
+```{r ovs-features, fig.width=10, fig.height=8}
+# Market Value comparison (log scale due to extreme skew)
+#p1 <- ovs_df %>%
+#  filter(market_value > 0) %>%
+#  ggplot(aes(x = factor(ovs, labels = c("Not Vacant", "Vacant")),
+#             y = market_value)) +
+#  geom_boxplot(fill = c("gray80", "tomato"), outlier.alpha = 0.05) +
+#  scale_y_log10(labels = dollar) +
+#  labs(title = "Market Value by OVS", x = NULL, y = "Market Value (log scale)") +
+#  theme_minimal()#
+
+# Year Built comparison
+#p2 <- ovs_df %>%
+#  filter(!is.na(year_built), year_built > 1700) %>%
+#  ggplot(aes(x = year_built, fill = factor(ovs, labels = c("Not Vacant", "Vacant")))) +
+#  geom_density(alpha = 0.5) +
+#  labs(title = "Year Built Distribution by OVS",
+#       x = "Year Built", y = "Density", fill = NULL) +
+#  theme_minimal()
+
+# Exterior Condition comparison
+#p3 <- ovs_df %>%
+#  filter(!is.na(exterior_condition)) %>%
+#  count(ovs, exterior_condition) %>%
+#  group_by(ovs) %>%
+#  mutate(pct = n / sum(n)) %>%
+#  ggplot(aes(x = factor(exterior_condition), y = pct,
+#             fill = factor(ovs, labels = c("Not Vacant", "Vacant")))) +
+#  geom_col(position = "dodge") +
+#  scale_y_continuous(labels = percent) +
+#  labs(title = "Exterior Condition Distribution by OVS",
+#       subtitle = "1 = Best, 7 = Worst",
+#       x = "Exterior Condition", y = "Proportion", fill = NULL) +
+#  theme_minimal()#
+
+# OPA Category Code = 6 (Vacant Land) rate
+#p4 <- ovs_df %>%
+#  mutate(is_vacant_land = category_code == "6") %>%
+#  count(ovs, is_vacant_land) %>%
+#  group_by(ovs) %>%
+# mutate(pct = n / sum(n)) %>%
+# filter(is_vacant_land == TRUE) %>%
+#  ggplot(aes(x = factor(ovs, labels = c("Not Vacant", "Vacant")), y = pct)) +
+#  geom_col(fill = c("gray60", "tomato"), width = 0.5) +
+#  scale_y_continuous(labels = percent) +
+#  labs(title = "OPA Category Code = 6 (Vacant Land) Rate",
+#       x = NULL, y = "% with Vacant Land Code") +
+#  theme_minimal()
+
+#(p1 | p2) / (p3 | p4)
+
+#ggsave("market_ovs.png", plot = p1, width = 10, height = 6, dpi = 300)
+#ggsave("year_built.png", plot = p2, width = 10, height = 6, dpi = 300)
+##ggsave("exteriorcondition.png", plot = p3, width = 10, height = 6, dpi = 300)
+#ggsave("opa_cat.png", plot = p4, width = 10, height = 6, dpi = 300)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(sf) # Ensure sf is loaded to use st_drop_geometry
+
+condition_dist_plot <- ovs_df %>%
+  # 1. STRIP GEOMETRY: This is the most likely reason your R is freezing. 
+  # Bar charts don't need coordinates.
+  st_drop_geometry() %>% 
+  
+  # 2. Select and ensure Numeric
+  select(ovs, exterior_condition, interior_condition) %>%
+  mutate(across(c(exterior_condition, interior_condition), as.numeric)) %>%
+  
+  # 3. Pivot the data
+  pivot_longer(
+    cols = c(exterior_condition, interior_condition),
+    names_to = "condition_type",
+    values_to = "score"
+  ) %>%
+  
+  # 4. Filter and Count (Aggregating here makes the plot render instantly)
+  filter(!is.na(score)) %>%
+  count(ovs, condition_type, score) %>%
+  group_by(ovs, condition_type) %>%
+  mutate(pct = n / sum(n)) %>%
+  ungroup() %>%
+  
+  # 5. Clean labels
+  mutate(condition_type = if_else(
+    condition_type == "exterior_condition", 
+    "Exterior Condition", 
+    "Interior Condition"
+  )) %>%
+  
+  # 6. Plot
+  ggplot(aes(x = factor(score), y = pct,
+             fill = factor(ovs, labels = c("Not Vacant", "Vacant")))) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = percent) +
+  facet_wrap(~ condition_type, ncol = 1) + 
+  labs(title = "Condition Distribution by OVS",
+       subtitle = "1 = Best, 7 = Worst",
+       x = "Condition Score", y = "Proportion", fill = NULL) +
+  theme_minimal()
+
+ggsave("condition_distribution.png", 
+       plot = condition_dist_plot, 
+       width = 10, 
+       height = 8, 
+       dpi = 300)
+```
+
+
+#spatial
+
+```{r}
+vacant_parcels_map <- ovs_df %>%
+  filter(!st_is_empty(geometry)) %>% 
+  st_centroid() %>% 
+  ggplot() +
+  geom_sf(aes(
+    color = factor(ovs), 
+    size = factor(ovs), 
+    alpha = factor(ovs)
+  )) +
+  scale_color_manual(
+    values = c("0" = "gray80", "1" = "red"),
+    labels = c("Occupied / Unknown", "Vacant")
+  ) +
+  scale_size_manual(
+    values = c("0" = 0.1, "1" = 0.8), 
+    guide = "none" # Hide from legend to keep it clean
+  ) +
+  # 4. Make Vacant dots fully opaque and Occupied dots very faint
+  scale_alpha_manual(
+    values = c("0" = 0.2, "1" = 1.0), 
+    guide = "none"
+  ) +
+  theme_void() +
+  labs(title = "All Parcels: Vacant vs Occupied", color = "Status") +
+  guides(color = guide_legend(override.aes = list(size = 3)))
+
+#ggsave("vacant_parcels_map.png", plot = vacant_parcels_map, width = 10, height = 10, dpi = 300)
+```
+
+
+```{r}
+vacant_parcels_map
+```
+
+```{r}
+vacant_only_map <- ovs_df %>%
+  filter(!st_is_empty(geometry), ovs == 1) %>% 
+  st_centroid() %>% 
+  ggplot() +
+  geom_sf(color = "red", size = 0.05, alpha = 0.4) +
+  theme_void() +
+  labs(title = "Vacant Parcels Only")
+vacant_only_map
+ggsave("vacant_only.png", plot = vacant_only_map, width = 10, height = 10)
+```
+
+```{r}
+occupied_only_map <- ovs_df %>%
+  filter(!st_is_empty(geometry), ovs == 0) %>% 
+  st_centroid() %>% 
+  ggplot() +
+  geom_sf(color = "gray80", size = 0.1, alpha = 0.3) +
+  theme_void() +
+  labs(title = "Occupied / Unknown Parcels Only")
+occupied_only_map
+ggsave("occupied_only.png", plot = occupied_only_map, width = 10, height = 10)
+```
+
+### 3c. Spatial Distribution of Vacancy (by Zip Code)
+
+#```{r ovs-spatial, fig.width=10, fig.height=6}
+zip_summary <- ovs_df %>%
+  filter(!is.na(zip_code)) %>%
+  group_by(zip_code) %>%
+  summarise(
+    total = n(),
+    vacant = sum(ovs),
+    vacancy_rate = mean(ovs),
+    .groups = "drop"
+  ) %>%
+  filter(total >= 100) %>%
+  arrange(desc(vacancy_rate))
+
+zip_summary_plot <- zip_summary %>%
+  head(20) %>%
+  ggplot(aes(x = reorder(as.character(zip_code), vacancy_rate), y = vacancy_rate)) +
+  geom_col(fill = "tomato") +
+  geom_text(aes(label = paste0(round(vacancy_rate * 100, 1), "%")),
+            hjust = -0.1, size = 3) +
+  coord_flip() +
+  scale_y_continuous(labels = percent, expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Top 20 Zip Codes by Vacancy Rate",
+       subtitle = "Only zip codes with 100+ parcels",
+       x = "Zip Code", y = "Vacancy Rate") +
+  theme_minimal()
+
+#ggsave("zip_summary.png", plot = zip_summary_plot, width = 10, height = 6, dpi = 300)
+
+#```
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(stringr)
+
+# Note: You must have an active Census API key to use tidycensus
+# census_api_key("YOUR_API_KEY", install = TRUE)
+
+# 1. Fetch Philadelphia Census Tract geometries using tidycensus
+# 1. Fetch Philadelphia Census Tract geometries
+philly_tracts <- get_acs(
+  geography = "tract",
+  variables = "B01003_001", # Total Population
+  state = "PA",
+  county = "Philadelphia",
+  year = 2022,
+  geometry = TRUE,
+  progress_bar = FALSE
+) %>%
+  select(GEOID, NAME, geometry)
+
+# 2. Aggregate OVS data and calculate top 10
+top_10_vacancy_tracts <- ovs_df %>%
+  st_drop_geometry() %>%
+  filter(!is.na(census_tract)) %>%
+  mutate(
+    # 1. Ensure it's numeric so we can do math
+    tract_num = as.numeric(as.character(census_tract)),
+    
+    # 2. Multiply by 100 to handle the decimal suffix (e.g., 1 -> 100, 2.01 -> 201)
+    tract_mult = tract_num * 100,
+    
+    # 3. Format as a 6-digit string with leading zeros
+    clean_tract = sprintf("%06d", tract_mult),
+    
+    # 4. Attach the PA (42) and Philly (101) FIPS codes
+    GEOID = paste0("42101", clean_tract)
+  ) %>%
+  group_by(GEOID) %>%
+  summarise(
+    total_parcels = n(),
+    vacant_parcels = sum(ovs, na.rm = TRUE),
+    vacancy_rate = vacant_parcels / total_parcels,
+    .groups = "drop"
+  ) %>%
+  # Join back to get the Tract Name from the tidycensus object
+  left_join(philly_tracts %>% st_drop_geometry(), by = "GEOID")
+
+# 3. Display the result
+top_10_vacancy_tracts %>%
+  select(Tract_Name = GEOID, Total_Parcels = total_parcels, 
+         Vacant_Parcels = vacant_parcels, Vacancy_Rate = vacancy_rate) %>%
+  mutate(Vacancy_Rate = scales::percent(Vacancy_Rate, accuracy = 0.1)) %>%
+  knitr::kable(caption = "Top 10 Philadelphia Census Tracts by Vacancy Rate")
+
+# 4. Re-join the calculated data to the spatial geometries
+philly_vacancy_map_data <- philly_tracts %>%
+  left_join(
+    # Selecting only necessary columns to avoid duplicating the 'NAME' column
+    top_10_vacancy_tracts %>% select(GEOID, total_parcels, vacant_parcels, vacancy_rate), 
+    by = "GEOID"
+  )
+
+# 5. Plot the Choropleth Map using ggplot2
+ggplot(data = philly_vacancy_map_data) +
+  # aes(fill = ...) tells ggplot to color the tracts based on the vacancy rate
+  geom_sf(aes(fill = vacancy_rate), color = "white", linewidth = 0.01) +
+  
+  # A colorblind-friendly continuous color scale
+  scale_fill_viridis_c(
+    option = "inferno", # 'plasma' or 'viridis' are also great options here
+    labels = scales::percent_format(accuracy = 1), 
+    na.value = "gray90", # Colors tracts with NA (no data) light gray
+    name = "Vacancy Rate"
+  ) +
+  
+  # Labels and titles
+  labs(
+    title = "Philadelphia Vacancy Rates by Census Tract",
+    subtitle = "Based on OVS Parcel Data",
+    caption = "Gray areas indicate missing or filtered data."
+  ) +
+  
+  # Clean up the map background and axes
+  theme_void() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, margin = margin(b = 10)),
+    legend.position = "right"
+  )
+```
+```{r}
+# 1. Align the coordinate systems, THEN spatially join
+# First, transform ovs_df to match philly_tracts
+ovs_df_projected <- st_transform(ovs_df, crs = st_crs(philly_tracts))
+
+# Now, perform the spatial join with the matching CRSs
+parcels_with_tracts <- st_join(
+  ovs_df_projected, 
+  philly_tracts %>% select(GEOID), 
+  join = st_intersects
+)
+
+# 2. Aggregate the data (same as before)
+tract_vacancy_rates <- parcels_with_tracts %>%
+  st_drop_geometry() %>%
+  filter(!is.na(GEOID)) %>% 
+  group_by(GEOID) %>%
+  summarise(
+    total_parcels = n(),
+    vacant_parcels = sum(ovs, na.rm = TRUE),
+    vacancy_rate = vacant_parcels / total_parcels,
+    .groups = "drop"
+  )
+
+# 3. Join back to tract geometries for the map (same as before)
+philly_vacancy_map_data <- philly_tracts %>%
+  left_join(tract_vacancy_rates, by = "GEOID")
+```
+
+
+```{r}
+# 1. Create a spatial dataset of ONLY the vacant parcels
+# Assuming 'ovs == 1' indicates vacancy; adjust if your column uses different values
+vacant_parcels_sf <- ovs_df %>% 
+  filter(ovs == 1) 
+
+# 2. Plot the layered map
+ggplot() +
+  # BOTTOM LAYER: The Census Tract Choropleth
+  geom_sf(
+    data = philly_vacancy_map_data, 
+    aes(fill = vacancy_rate), 
+    color = "white", 
+    linewidth = 0.1
+  ) +
+  
+  # TOP LAYER: The Vacant Parcels Overlay
+  geom_sf(
+    data = vacant_parcels_sf, 
+    color = "black",        # Color of the parcels/points
+    fill = "black",         # Fill color if they are polygons
+    size = 0.1,             # Make them small so they don't overwhelm the map
+    alpha = 0.3             # Make them transparent so the tract colors show through
+  ) +
+  
+  # A colorblind-friendly continuous color scale for the base map
+  scale_fill_viridis_c(
+    option = "inferno", 
+    labels = scales::percent_format(accuracy = 1), 
+    na.value = "gray90", 
+    name = "Vacancy Rate"
+  ) +
+  
+  # Labels and titles
+  labs(
+    title = "Philadelphia Vacancy Rates with Parcel Overlay",
+    subtitle = "Black dots/polygons represent individual vacant parcels",
+    caption = "Data: OVS and US Census Bureau"
+  ) +
+  
+  # Clean up the map background and axes
+  theme_void() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, margin = margin(b = 10)),
+    legend.position = "right"
+  )
+```
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(tidycensus)
+library(sf)
+
+# Note: You must have an active Census API key to use tidycensus
+# census_api_key("YOUR_API_KEY", install = TRUE)
+
+# 1. Fetch Philadelphia Census Tract geometries using tidycensus
+philly_tracts <- get_acs(
+  geography = "tract",
+  variables = "B01003_001", # Total Population
+  state = "PA",
+  county = "Philadelphia",
+  year = 2022,
+  geometry = TRUE,
+  progress_bar = FALSE
+) %>%
+  select(GEOID, NAME, geometry)
+
+# 2. Align CRS and Spatially Join Parcels to Tracts
+# Transform ovs_df to match the coordinate reference system of philly_tracts
+ovs_df_projected <- st_transform(ovs_df, crs = st_crs(philly_tracts))
+
+# Perform the spatial join to assign a GEOID to every parcel based on location
+parcels_with_tracts <- st_join(
+  ovs_df_projected, 
+  philly_tracts %>% select(GEOID), 
+  join = st_intersects
+)
+
+# 3. Aggregate Vacancy Data for ALL Tracts
+tract_vacancy_rates <- parcels_with_tracts %>%
+  st_drop_geometry() %>%
+  filter(!is.na(GEOID)) %>% 
+  group_by(GEOID) %>%
+  summarise(
+    total_parcels = n(),
+    vacant_parcels = sum(ovs, na.rm = TRUE),
+    vacancy_rate = vacant_parcels / total_parcels,
+    .groups = "drop"
+  )
+
+# 4. Join Calculated Rates back to Tract Geometries for Mapping
+philly_vacancy_map_data <- philly_tracts %>%
+  left_join(tract_vacancy_rates, by = "GEOID")
+
+# 5. Create a spatial dataset of ONLY the vacant parcels for the overlay
+# Using the projected dataframe ensures it maps perfectly over the tracts
+vacant_parcels_sf <- ovs_df_projected %>% 
+  filter(ovs == 1) 
+
+# 6. Plot the Layered Map using ggplot2
+vacant_tract <- ggplot() +
+  # BOTTOM LAYER: The Census Tract Choropleth (All Tracts)
+  geom_sf(
+    data = philly_vacancy_map_data, 
+    aes(fill = vacancy_rate), 
+    color = "white", 
+    linewidth = 0.01
+  ) +
+  
+  # TOP LAYER: The Vacant Parcels Overlay
+ # geom_sf(
+  #  data = vacant_parcels_sf, 
+  # color = "red",        
+  #  fill = "red",         
+   # size = 0.1,             
+  #  alpha = 0.1             
+  #) +
+  
+  # A colorblind-friendly continuous color scale
+  scale_fill_viridis_c(
+    option = "mako", 
+    direction = -1,
+    labels = scales::percent_format(accuracy = 1), 
+    na.value = "gray90", 
+    name = "Vacancy Rate"
+  ) +
+  
+  # Labels and titles
+  labs(
+    title = "Philadelphia Vacancy Rates by Census Tract",
+    caption = "Data: OVS and US Census Bureau | Gray tracts indicate missing data"
+  ) +
+  
+  # Clean up the map background and axes
+  theme_void() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, margin = margin(b = 10)),
+    legend.position = "right"
+  )
+ggsave("census.png", plot = vacant_tract, width = 10, height = 10)
+```
+

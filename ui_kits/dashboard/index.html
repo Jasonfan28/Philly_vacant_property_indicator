@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Philly Stat 360 — Dashboard</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #f7f7f7; }
+</style>
+</head>
+<body>
+
+<script type="text/babel" src="Header.jsx"></script>
+<script type="text/babel" src="StatCard.jsx"></script>
+<script type="text/babel" src="Callout.jsx"></script>
+<script type="text/babel" src="Sidebar.jsx"></script>
+<script type="text/babel" src="DataTable.jsx"></script>
+
+<script type="text/babel">
+const STAT_CARDS = [
+  { label: '311 resolution rate',        value: '81',   unit: '%',      trend: '↓ 3% vs last month', trendDir: 'down', target: '85%' },
+  { label: 'Trash collection on-time',   value: '94',   unit: '%',      trend: '↑ 2% vs last month', trendDir: 'up',   target: '90%' },
+  { label: 'Permit processing',          value: '3.8',  unit: ' days',  trend: '↑ 18% faster',       trendDir: 'up',   target: '5 days' },
+  { label: 'Water main repairs',         value: '19.2', unit: ' hrs',   trend: '↑ 12% faster',       trendDir: 'up',   target: '24 hrs' },
+];
+
+// ── Department Detail Screen ──────────────────────────────────────────
+const MiniBarChart = ({ data }) => {
+  const max = Math.max(...data.map(d => d.value));
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120, padding: '0 4px' }}>
+      {data.map((d, i) => (
+        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 11, color: '#a1a1a1', fontFamily: "'Open Sans', sans-serif" }}>{d.value}%</div>
+          <div style={{ width: '100%', background: i === data.length - 1 ? '#0f4d90' : '#96c9ff', borderRadius: '2px 2px 0 0', height: `${(d.value / max) * 80}px` }}></div>
+          <div style={{ fontSize: 11, color: '#a1a1a1', fontFamily: "'Open Sans', sans-serif", textAlign: 'center' }}>{d.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const CHART_DATA = [
+  { label: 'May', value: 88 }, { label: 'Jun', value: 91 }, { label: 'Jul', value: 90 },
+  { label: 'Aug', value: 89 }, { label: 'Sep', value: 92 }, { label: 'Oct', value: 94 },
+];
+
+const DepartmentDetail = ({ onBack }) => (
+  <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 32px' }}>
+    <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2176d2', fontFamily: "'Open Sans', sans-serif", fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 4 }}>
+      ← All departments
+    </button>
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px', color: '#a1a1a1', marginBottom: 4 }}>Department</div>
+      <h1 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 32, color: '#0f4d90', margin: 0, letterSpacing: '-0.3px' }}>Streets Department</h1>
+      <p style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 16, color: '#444', margin: '8px 0 0', lineHeight: 1.55 }}>Responsible for trash collection, street cleaning, pothole repair, and snow removal across all Philadelphia neighborhoods.</p>
+    </div>
+
+    <Callout title="October 2025 highlight">
+      94% of residential trash collected on schedule — 4 points above the 90% target. Performance improved in all 7 districts.
+    </Callout>
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, margin: '24px 0' }}>
+      <StatCard label="On-time collection" value="94" unit="%" trend="↑ 2% vs September" trendDir="up" target="90%" />
+      <StatCard label="Street cleaning rate" value="88" unit="%" trend="↓ 1% vs September" trendDir="down" target="90%" />
+      <StatCard label="Pothole repair time" value="4.1" unit=" days" trend="↑ 8% faster" trendDir="up" target="5 days" />
+    </div>
+
+    <div style={{ background: '#fff', border: '1px solid #cfcfcf', borderRadius: 6, padding: '20px 24px', marginBottom: 24 }}>
+      <h3 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 16, color: '#0f4d90', margin: '0 0 16px' }}>Trash collection on-time rate — last 6 months</h3>
+      <MiniBarChart data={CHART_DATA} />
+      <div style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 12, color: '#a1a1a1', marginTop: 12 }}>
+        On-time rate (%) · Source: Streets Department operations data · Updated monthly
+      </div>
+    </div>
+
+    <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 20, color: '#0f4d90', marginBottom: 16 }}>All metrics</h2>
+    <DataTable filterDept="streets" />
+  </div>
+);
+
+// ── About Screen ──────────────────────────────────────────────────────
+const AboutScreen = () => (
+  <div style={{ maxWidth: 800, margin: '0 auto', padding: '48px 32px' }}>
+    <h1 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 36, color: '#0f4d90', letterSpacing: '-0.3px', marginBottom: 16 }}>About Philly Stat 360</h1>
+    <p style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 16, color: '#444', lineHeight: 1.6, marginBottom: 24 }}>
+      Philly Stat 360 gives every Philadelphian a clear look at how city government is doing. We track performance across departments — in plain language, updated daily.
+    </p>
+    <Callout title="Our commitment">
+      We believe residents deserve a government they can see, feel, and touch. Every number on this site comes directly from city operations data, updated on a set schedule. No spin. No estimates.
+    </Callout>
+    <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 22, color: '#0f4d90', marginTop: 32, marginBottom: 12 }}>How we measure</h2>
+    <p style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 16, color: '#444', lineHeight: 1.6 }}>Each metric has a defined target set by department leadership and approved by the Mayor's Office. Targets reflect what residents should reasonably expect from city services.</p>
+    <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 22, color: '#0f4d90', marginTop: 32, marginBottom: 12 }}>Data sources</h2>
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: "'Open Sans', sans-serif", fontSize: 14, marginBottom: 24 }}>
+      <thead>
+        <tr>
+          <th style={{ background: '#0f4d90', color: '#fff', fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', padding: '12px 16px', textAlign: 'left' }}>Department</th>
+          <th style={{ background: '#0f4d90', color: '#fff', fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', padding: '12px 16px', textAlign: 'left' }}>Source system</th>
+          <th style={{ background: '#0f4d90', color: '#fff', fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', padding: '12px 16px', textAlign: 'left' }}>Update frequency</th>
+        </tr>
+      </thead>
+      <tbody>
+        {[['Streets','ServiceNow + fleet GPS','Daily'],['L&I','eCLIPSE permits system','Daily'],['PPD','CAD system','Monthly'],['Water','SCADA + field reports','Weekly']].map(([a,b,c],i) => (
+          <tr key={i} style={{ background: i%2===0 ? '#f7f7f7' : '#fff' }}>
+            <td style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', color: '#444' }}>{a}</td>
+            <td style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', color: '#444' }}>{b}</td>
+            <td style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', color: '#444' }}>{c}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    <Callout variant="info">Questions about the data? Contact the Office of Innovation and Technology at innovation@phila.gov</Callout>
+  </div>
+);
+
+// ── Departments List Screen ───────────────────────────────────────────
+const DEPT_LIST = [
+  { id:'streets',  name:'Streets',              kpi:'94% on-time collection',  status:'on-track'  },
+  { id:'li',       name:'Licenses & Inspections',kpi:'3.8 day permit turnaround', status:'on-track' },
+  { id:'ppd',      name:'Police (PPD)',          kpi:'12.4 sec 911 answer time', status:'off-target'},
+  { id:'parks',    name:'Parks & Recreation',   kpi:'87% inspections complete', status:'at-risk'   },
+  { id:'water',    name:'Water',                kpi:'19.2 hr main break repair', status:'on-track' },
+  { id:'oit',      name:'Office of Innovation', kpi:'81% 311 resolution rate',  status:'at-risk'   },
+  { id:'health',   name:'Public Health',        kpi:'97% restaurant inspections', status:'on-track' },
+];
+
+const statusDot = status => ({ 'on-track':'#3a833c','at-risk':'#f99300','off-target':'#cc3000' }[status]);
+const statusLabel = status => ({ 'on-track':'On track','at-risk':'At risk','off-target':'Off target' }[status]);
+
+const DepartmentsScreen = ({ onSelectDept }) => (
+  <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 32px' }}>
+    <h1 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 32, color: '#0f4d90', letterSpacing: '-0.3px', marginBottom: 8 }}>All departments</h1>
+    <p style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 16, color: '#444', marginBottom: 24 }}>Select a department to see detailed performance metrics.</p>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+      {DEPT_LIST.map(dept => (
+        <div key={dept.id} onClick={() => onSelectDept(dept.id)}
+          style={{ background: '#fff', border: '1px solid #cfcfcf', borderRadius: 6, padding: '20px 24px', cursor: 'pointer', transition: 'border-color 0.15s' }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = '#2176d2'}
+          onMouseLeave={e => e.currentTarget.style.borderColor = '#cfcfcf'}>
+          <h3 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 16, color: '#0f4d90', margin: '0 0 6px' }}>{dept.name}</h3>
+          <div style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 14, color: '#444', marginBottom: 12 }}>{dept.kpi}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: statusDot(dept.status) }}></div>
+            <span style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 13, fontWeight: 600, color: statusDot(dept.status) }}>{statusLabel(dept.status)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+// ── Main Dashboard Screen ─────────────────────────────────────────────
+const DashboardHome = ({ onNavigate, onSelectDept, selectedDept, onDeptSelect }) => (
+  <div style={{ display: 'flex', minHeight: 'calc(100vh - 64px)' }}>
+    <Sidebar selected={selectedDept} onSelect={onDeptSelect} />
+    <main style={{ flex: 1, padding: '32px 32px', minWidth: 0 }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 28, color: '#0f4d90', letterSpacing: '-0.3px', margin: '0 0 6px' }}>
+          City performance dashboard
+        </h1>
+        <p style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 15, color: '#444', margin: 0 }}>
+          October 2025 · Updated daily · All city departments
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+        {STAT_CARDS.map((card, i) => (
+          <StatCard key={i} {...card} onClick={() => onNavigate('departments')} />
+        ))}
+      </div>
+
+      <Callout title="October highlights">
+        Streets Department hit 94% on-time collection — 4 points above target. L&amp;I cut permit times by 18%. PPD 911 response is running 2.4 seconds over target.
+      </Callout>
+
+      <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 20, color: '#0f4d90', margin: '28px 0 16px' }}>All metrics</h2>
+      <DataTable filterDept={selectedDept === 'all' ? null : selectedDept} />
+
+      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn btn-secondary" onClick={() => onNavigate('departments')}>
+          View by department
+        </button>
+      </div>
+    </main>
+  </div>
+);
+
+// ── Hero Banner ───────────────────────────────────────────────────────
+const HeroBanner = ({ onNavigate }) => (
+  <div style={{ background: '#0f4d90', padding: '48px 32px', color: '#fff' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+      <h1 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 36, color: '#fff', letterSpacing: '-0.3px', margin: '0 0 14px', maxWidth: 620 }}>
+        Giving Philadelphians a government they can see, feel, and touch.
+      </h1>
+      <p style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 17, opacity: 0.9, margin: '0 0 28px', maxWidth: 500, lineHeight: 1.55 }}>
+        Track how every city department is performing — in plain language, updated daily.
+      </p>
+      <button className="btn btn-cta" onClick={() => onNavigate('dashboard')}>
+        Explore the data
+      </button>
+    </div>
+  </div>
+);
+
+// ── App Root ──────────────────────────────────────────────────────────
+const PAGES = ['home', 'dashboard', 'departments', 'dept-detail', 'about'];
+
+const App = () => {
+  const saved = localStorage.getItem('ps360-page');
+  const [page, setPage] = React.useState(saved || 'home');
+  const [selectedDept, setSelectedDept] = React.useState('all');
+
+  const navigate = p => {
+    setPage(p);
+    localStorage.setItem('ps360-page', p);
+  };
+
+  const handleDeptSelect = id => {
+    setSelectedDept(id);
+  };
+
+  return (
+    <div>
+      <Header activePage={page === 'home' ? 'dashboard' : page} onNavigate={navigate} />
+      {page === 'home' && (
+        <>
+          <HeroBanner onNavigate={navigate} />
+          <DashboardHome onNavigate={navigate} selectedDept={selectedDept} onDeptSelect={handleDeptSelect} />
+        </>
+      )}
+      {page === 'dashboard' && (
+        <DashboardHome onNavigate={navigate} selectedDept={selectedDept} onDeptSelect={handleDeptSelect} />
+      )}
+      {page === 'departments' && (
+        <DepartmentsScreen onSelectDept={() => navigate('dept-detail')} />
+      )}
+      {page === 'dept-detail' && (
+        <DepartmentDetail onBack={() => navigate('departments')} />
+      )}
+      {page === 'about' && <AboutScreen />}
+    </div>
+  );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+
+<div id="root"></div>
+</body>
+</html>

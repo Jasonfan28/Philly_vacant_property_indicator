@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Residential Vacancy Risk Model — Philly Stat 360</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+/* ── Reset & tokens ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+:root {
+  --blue-dark:   #0f4d90;
+  --blue-mid:    #2176d2;
+  --blue-light:  #96c9ff;
+  --blue-pale:   #daedfe;
+  --yellow:      #f3c613;
+  --green:       #3a833c;
+  --red:         #cc3000;
+  --body:        #444;
+  --muted:       #a1a1a1;
+  --border:      #cfcfcf;
+  --surface:     #f0f0f0;
+  --white:       #fff;
+  --font-head:   'Montserrat', sans-serif;
+  --font-body:   'Open Sans', sans-serif;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--body);
+  background: var(--white);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--blue-mid); text-decoration: underline; }
+a:hover { color: var(--blue-dark); }
+img { display: block; max-width: 100%; }
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+@media (max-width: 640px) { .container { padding: 0 16px; } }
+
+/* ── NAV ────────────────────────────────────────────── */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+}
+.nav-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+}
+.nav-brand img { height: 36px; }
+.nav-brand-label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--blue-dark);
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+.nav-brand-label span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.nav-links {
+  display: flex;
+  list-style: none;
+  gap: 0;
+}
+.nav-links a {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--body);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+.nav-links a:hover {
+  color: var(--blue-mid);
+  border-bottom-color: var(--yellow);
+}
+.nav-cta {
+  background: var(--blue-mid);
+  color: var(--white) !important;
+  border-radius: 2px;
+  margin-left: 8px;
+  border-bottom: none !important;
+  height: 38px !important;
+  padding: 0 18px !important;
+  align-self: center;
+  transition: background .15s !important;
+}
+.nav-cta:hover { background: var(--blue-dark) !important; color: var(--white) !important; }
+
+.nav-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  flex-direction: column;
+  gap: 5px;
+}
+.nav-hamburger span {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--body);
+  border-radius: 2px;
+}
+
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .nav-hamburger { display: flex; }
+}
+
+/* ── HERO ───────────────────────────────────────────── */
+.hero {
+  position: relative;
+  min-height: 580px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  background-image: url('assets/Philly_hero.jpg');
+  background-size: cover;
+  background-position: center 40%;
+  filter: saturate(0.85);
+}
+/* Two-layer overlay: deep navy base + subtle bottom-up gradient for text legibility */
+.hero-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to top, rgba(8,32,68,0.96) 0%, rgba(8,32,68,0.72) 50%, rgba(8,32,68,0.45) 100%);
+}
+.hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 80px 32px 72px;
+  width: 100%;
+}
+.hero-eyebrow {
+  font-family: var(--font-head);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--yellow);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 24px;
+  height: 2px;
+  background: var(--yellow);
+  flex-shrink: 0;
+}
+.hero h1 {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: clamp(28px, 4.5vw, 52px);
+  color: var(--white);
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  max-width: 680px;
+  margin-bottom: 20px;
+  text-wrap: pretty;
+}
+.hero-sub {
+  font-size: clamp(15px, 2vw, 18px);
+  color: rgba(255,255,255,0.88);
+  max-width: 560px;
+  line-height: 1.6;
+  margin-bottom: 36px;
+}
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 12px 22px;
+  border-radius: 2px;
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  transition: background .15s, color .15s;
+}
+.btn-cta  { background: var(--yellow); color: var(--blue-dark); }
+.btn-cta:hover { background: #e5bb10; color: var(--blue-dark); }
+.btn-ghost { background: transparent; color: var(--white); border: 2px solid rgba(255,255,255,0.6); }
+.btn-ghost:hover { border-color: var(--white); background: rgba(255,255,255,0.08); color: var(--white); }
+.btn-primary { background: var(--blue-mid); color: var(--white); }
+.btn-primary:hover { background: var(--blue-dark); }
+.btn-outline { background: var(--white); color: var(--blue-mid); border: 2px solid var(--blue-mid); }
+.btn-outline:hover { background: var(--blue-pale); }
+
+/* arrow icon */
+.arrow::after { content: ' →'; }
+
+/* ── METRICS STRIP ──────────────────────────────────── */
+.metrics {
+  background: var(--blue-dark);
+  padding: 0;
+}
+.metrics-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+.metric-item {
+  padding: 32px 28px;
+  border-right: 1px solid rgba(255,255,255,0.12);
+  text-align: left;
+}
+.metric-item:last-child { border-right: none; }
+.metric-value {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 42px;
+  color: var(--yellow);
+  line-height: 1;
+  letter-spacing: -1px;
+  margin-bottom: 6px;
+}
+.metric-label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: rgba(255,255,255,0.75);
+  line-height: 1.4;
+}
+.metric-label strong {
+  display: block;
+  font-weight: 600;
+  color: var(--white);
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+@media (max-width: 768px) {
+  .metrics-inner { grid-template-columns: repeat(2, 1fr); }
+  .metric-item:nth-child(2) { border-right: none; }
+  .metric-item:nth-child(3) { border-bottom: none; }
+}
+@media (max-width: 480px) {
+  .metrics-inner { grid-template-columns: 1fr; }
+  .metric-item { border-right: none; border-bottom: 1px solid rgba(255,255,255,0.12); }
+  .metric-item:last-child { border-bottom: none; }
+}
+
+/* ── SECTION WRAPPER ────────────────────────────────── */
+.section { padding: 72px 0; }
+.section-sm { padding: 48px 0; }
+.section-label {
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--blue-mid);
+  margin-bottom: 12px;
+}
+.section-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: clamp(22px, 3vw, 30px);
+  color: var(--blue-dark);
+  letter-spacing: -0.3px;
+  margin-bottom: 14px;
+  text-wrap: pretty;
+}
+.section-intro {
+  font-size: 17px;
+  color: var(--body);
+  max-width: 640px;
+  line-height: 1.65;
+  margin-bottom: 40px;
+}
+
+/* ── DELIVERABLES CARDS ─────────────────────────────── */
+.deliverables { background: var(--surface); }
+.del-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 640px) { .del-grid { grid-template-columns: 1fr; } }
+
+.del-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color .15s, transform .15s;
+  text-decoration: none;
+}
+.del-card:hover {
+  border-color: var(--blue-mid);
+  transform: translateY(-2px);
+}
+.del-card-header {
+  padding: 28px 28px 20px;
+  border-bottom: 4px solid var(--yellow);
+}
+.del-card-type {
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--blue-mid);
+  margin-bottom: 10px;
+}
+.del-card-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--blue-dark);
+  line-height: 1.25;
+  margin-bottom: 0;
+}
+.del-card-body {
+  padding: 20px 28px 28px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.del-card-desc {
+  font-size: 15px;
+  color: var(--body);
+  line-height: 1.6;
+  flex: 1;
+}
+.del-card-features {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.del-card-features li {
+  font-size: 13px;
+  color: var(--body);
+  padding-left: 16px;
+  position: relative;
+  line-height: 1.4;
+}
+.del-card-features li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.del-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--blue-mid);
+  text-decoration: none;
+  margin-top: 4px;
+  transition: color .15s;
+}
+.del-card:hover .del-card-action { color: var(--blue-dark); }
+.del-card-action::after { content: ' →'; }
+
+/* ── DOES / DOESN'T ─────────────────────────────────── */
+.honesty-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+@media (max-width: 640px) { .honesty-grid { grid-template-columns: 1fr; gap: 24px; } }
+
+.honesty-col-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.honesty-col-title.does { color: var(--green); border-bottom-color: var(--green); }
+.honesty-col-title.doesnt { color: var(--red); border-bottom-color: var(--red); }
+
+.honesty-item {
+  display: flex;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--surface);
+}
+.honesty-item:last-child { border-bottom: none; }
+.honesty-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+.honesty-icon.check { background: #e8f5e9; color: var(--green); }
+.honesty-icon.cross { background: #fdecea; color: var(--red); }
+.honesty-text { font-size: 15px; color: var(--body); line-height: 1.55; }
+.honesty-text strong { color: #333; font-weight: 600; }
+
+/* ── CALLOUT BANNER ─────────────────────────────────── */
+.callout-banner {
+  background: var(--blue-pale);
+  border-left: 4px solid var(--blue-mid);
+  padding: 20px 24px;
+  border-radius: 0 4px 4px 0;
+  margin-top: 40px;
+}
+.callout-banner p {
+  font-size: 15px;
+  color: var(--blue-dark);
+  line-height: 1.6;
+  margin: 0;
+}
+.callout-banner strong { font-weight: 700; }
+
+/* ── ABOUT BAND ─────────────────────────────────────── */
+.about-band {
+  background: var(--blue-dark);
+  padding: 72px 0;
+}
+.about-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 64px;
+  align-items: start;
+}
+@media (max-width: 768px) {
+  .about-inner { grid-template-columns: 1fr; gap: 40px; }
+}
+.about-logo { margin-bottom: 20px; }
+.about-mission {
+  font-size: 17px;
+  color: rgba(255,255,255,0.88);
+  line-height: 1.7;
+  margin-bottom: 0;
+}
+.about-col-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--yellow);
+  margin-bottom: 20px;
+}
+.contact-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.contact-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.contact-list .contact-type {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255,255,255,0.5);
+}
+.contact-list .contact-value {
+  font-size: 15px;
+  color: rgba(255,255,255,0.9);
+}
+.contact-list a {
+  color: var(--blue-light);
+  text-decoration: underline;
+}
+.contact-list a:hover { color: var(--white); }
+
+/* ── FOOTER ─────────────────────────────────────────── */
+footer {
+  background: #0a3868;
+  border-top: 3px solid var(--yellow);
+  padding: 28px 32px;
+}
+.footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.footer-copy {
+  font-size: 13px;
+  color: rgba(255,255,255,0.55);
+  line-height: 1.5;
+}
+.footer-copy a {
+  color: rgba(255,255,255,0.7);
+  text-decoration: underline;
+}
+.footer-copy a:hover { color: var(--white); }
+.footer-links {
+  display: flex;
+  gap: 20px;
+  list-style: none;
+}
+.footer-links a {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  transition: color .15s;
+}
+.footer-links a:hover { color: var(--white); }
+
+/* ── STORY SECTION ──────────────────────────────────── */
+.story-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 80px;
+  align-items: start;
+}
+@media (max-width: 900px) { .story-grid { grid-template-columns: 1fr; gap: 40px; } }
+
+.story-prose p {
+  font-size: 17px;
+  line-height: 1.75;
+  color: var(--body);
+  margin-bottom: 20px;
+  text-wrap: pretty;
+}
+.story-prose p:last-child { margin-bottom: 0; }
+.story-prose strong { color: #333; font-weight: 600; }
+
+.pull-stat {
+  border-top: 4px solid var(--yellow);
+  padding-top: 24px;
+  margin-bottom: 32px;
+}
+.pull-stat-value {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 30px;
+  color: var(--blue-dark);
+  line-height: 1;
+  letter-spacing: -2px;
+  margin-bottom: 6px;
+}
+.pull-stat-label {
+  font-size: 15px;
+  color: var(--body);
+  line-height: 1.5;
+  max-width: 260px;
+}
+.pull-stat-source {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.sidebar-callout {
+  background: var(--blue-dark);
+  color: var(--white);
+  border-radius: 4px;
+  padding: 28px 28px 24px;
+  margin-bottom: 24px;
+}
+.sidebar-callout-label {
+  font-family: var(--font-head);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--yellow);
+  margin-bottom: 12px;
+}
+.sidebar-callout-text {
+  font-size: 16px;
+  line-height: 1.65;
+  color: rgba(255,255,255,0.9);
+}
+.sidebar-callout-text strong {
+  color: var(--white);
+  font-weight: 600;
+}
+
+.sidebar-fact-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.sidebar-fact {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sidebar-fact:last-child { border-bottom: none; }
+.sidebar-fact-value {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--blue-dark);
+  letter-spacing: -0.3px;
+}
+.sidebar-fact-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ── HOW IT WORKS ───────────────────────────────────── */
+.how-bg { background: var(--blue-pale); }
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  position: relative;
+}
+.steps-grid::before {
+  content: '';
+  position: absolute;
+  top: 28px;
+  left: calc(12.5% + 20px);
+  right: calc(12.5% + 20px);
+  height: 2px;
+  background: var(--blue-light);
+  z-index: 0;
+}
+@media (max-width: 768px) {
+  .steps-grid { grid-template-columns: repeat(2, 1fr); }
+  .steps-grid::before { display: none; }
+}
+@media (max-width: 480px) { .steps-grid { grid-template-columns: 1fr; } }
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 20px 0;
+  position: relative;
+  z-index: 1;
+}
+.step-num {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--blue-dark);
+  color: var(--white);
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+  border: 3px solid var(--blue-pale);
+}
+.step-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--blue-dark);
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+.step-desc {
+  font-size: 13px;
+  color: var(--body);
+  line-height: 1.55;
+}
+
+/* ── SKIP LINK (a11y) ───────────────────────────────── */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--yellow);
+  color: var(--blue-dark);
+  padding: 8px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  z-index: 999;
+  text-decoration: none;
+  transition: top .15s;
+}
+.skip-link:focus { top: 0; }
+
+@media (max-width: 640px) {
+  .section { padding: 48px 0; }
+  .hero-content { padding: 60px 16px 56px; }
+  .hero { min-height: 480px; }
+  footer { padding: 24px 16px; }
+  .footer-inner { flex-direction: column; align-items: flex-start; }
+}
+
+/* ── MOBILE NAV OVERLAY ─────────────────────────────── */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: var(--blue-dark);
+  flex-direction: column;
+  padding: 0;
+  overflow-y: auto;
+}
+.mobile-nav.open { display: flex; }
+
+.mobile-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 64px;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  flex-shrink: 0;
+}
+.mobile-nav-header img { height: 32px; }
+.mobile-nav-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-nav-close svg { width: 24px; height: 24px; }
+
+.mobile-nav-links {
+  list-style: none;
+  padding: 24px 0;
+  flex: 1;
+}
+.mobile-nav-links li a {
+  display: block;
+  padding: 16px 24px;
+  font-family: var(--font-head);
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.9);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.mobile-nav-links li a:hover {
+  color: var(--yellow);
+  border-left-color: var(--yellow);
+  background: rgba(255,255,255,0.05);
+}
+
+.mobile-nav-cta {
+  padding: 24px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+  flex-shrink: 0;
+}
+.mobile-nav-cta a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 16px;
+  background: var(--yellow);
+  color: var(--blue-dark);
+  font-family: var(--font-head);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  text-decoration: none;
+  border-radius: 2px;
+}
+</style>
+</head>
+
+<body>
+<a href="#main" class="skip-link">Skip to main content</a>
+
+<!-- ── MOBILE NAV OVERLAY ──────────────────────────── -->
+<div class="mobile-nav" id="mobileNav" role="dialog" aria-modal="true" aria-label="Mobile navigation">
+  <div class="mobile-nav-header">
+    <img src="assets/logo2-white.png" alt="City of Philadelphia">
+    <button class="mobile-nav-close" id="mobileNavClose" aria-label="Close menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+  <ul class="mobile-nav-links" role="list">
+    <li><a href="#background" class="mobile-nav-link">Background</a></li>
+    <li><a href="#how-it-works" class="mobile-nav-link">How it works</a></li>
+    <li><a href="#deliverables" class="mobile-nav-link">Deliverables</a></li>
+    <li><a href="PhillyStat360 v2.html" class="mobile-nav-link">Methodology</a></li>
+    <li><a href="#about" class="mobile-nav-link">About</a></li>
+  </ul>
+  <div class="mobile-nav-cta">
+    <a href="dashboard.html">Open the dashboard →</a>
+  </div>
+</div>
+
+<!-- ── NAV ─────────────────────────────────────────── -->
+<nav class="nav" role="navigation" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a href="#" class="nav-brand" aria-label="City of Philadelphia — Philly Stat 360">
+      <img src="assets/logo2-blue-text.png" alt="City of Philadelphia" height="36">
+      <div class="nav-brand-label">
+        Philly Stat 360
+        <span>Residential Vacancy Risk</span>
+      </div>
+    </a>
+    <ul class="nav-links" role="list">
+      <li><a href="#background">Background</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+      <li><a href="PhillyStat360 v2.html">Methodology</a></li>
+      <li><a href="#about">About</a></li>
+    </ul>
+    <button class="nav-hamburger" id="navHamburger" aria-label="Open menu" aria-expanded="false" aria-controls="mobileNav">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- ── HERO ─────────────────────────────────────────── -->
+<section id="main" class="hero" aria-label="Project introduction">
+  <div class="hero-bg" role="img" aria-label="Aerial photograph of Philadelphia rowhomes at dusk"></div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">Philly Stat 360 · Residential Vacancy Risk Model</div>
+    <h1>Finding the vacant homes the city hasn't found yet.</h1>
+    <p class="hero-sub">
+      A machine learning model that scores all 520,000 Philadelphia parcels for vacancy risk — surfacing properties likely to be vacant that don't appear in current city records.
+    </p>
+    <div class="hero-actions">
+      <a href="dashboard.html" class="btn btn-cta arrow">Explore the dashboard</a>
+      <a href="PhillyStat360 v2.html" class="btn btn-ghost">Read the methodology</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── METRICS STRIP ─────────────────────────────────── -->
+<div class="metrics" aria-label="Model performance metrics">
+  <div class="metrics-inner">
+    <div class="metric-item">
+      <div class="metric-value">0.940</div>
+      <div class="metric-label">
+        <strong>AUC</strong>
+        Area under the ROC curve — how well the model separates vacant from occupied parcels
+      </div>
+    </div>
+    <div class="metric-item">
+      <div class="metric-value">84.0%</div>
+      <div class="metric-label">
+        <strong>Sensitivity</strong>
+        Share of actually-vacant parcels the model correctly flags
+      </div>
+    </div>
+    <div class="metric-item">
+      <div class="metric-value">89.8%</div>
+      <div class="metric-label">
+        <strong>Specificity</strong>
+        Share of occupied parcels the model correctly leaves unflagged
+      </div>
+    </div>
+    <div class="metric-item">
+      <div class="metric-value">~436k</div>
+      <div class="metric-label">
+        <strong>Parcels scored</strong>
+        Every residential parcel in Philadelphia receives a calibrated probability score
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── STORY ─────────────────────────────────────────── -->
+<section class="section" id="background" aria-labelledby="story-title" style="background:#fff; border-bottom: 1px solid var(--surface);">
+  <div class="container">
+    <div class="section-label">The problem</div>
+    <h2 class="section-title" id="story-title">Philadelphia has a vacancy problem. The records don't show all of it.</h2>
+    <div class="story-grid">
+      <div class="story-prose">
+        <p>Vacant properties are one of the most visible signs of disinvestment in a neighborhood. They attract illegal dumping, reduce property values for surrounding owners, create fire hazards, and signal to residents that a block is being left behind.</p>
+        <p>The city's official vacancy count, the Vacant Property Indicator, is compiled from Licenses and Inspections records, and it has a known gap. A building can sit empty for years before an inspector flags it or a neighbor files a complaint. The data reflects enforcement history, not ground truth.</p>
+        <p>That gap matters, because L&amp;I can't inspect what it doesn't know about. Community development organizations, housing courts, and city planners deciding where to direct resources end up working from an incomplete picture.</p>
+        <p>This model was built to close part of that gap. It combines dozens of signals from public administrative data: code violation history, clean and seal actions, unsafe and imminently dangerous orders, business license records, building permits, parcel characteristics from OPA, and deed transfer history. The result is a probability score for every residential parcel in the city, and higher scores mean a property looks more like other properties that turned out to be vacant.</p>
+        <p>The goal is not to have a final determination of vacancy, not a lien or seizure trigger, and not a substitute for field judgement. It's to give the people doing the work a calibrated starting point, a prioritized list of addresses worth a second look based on data rather than chance or proximity to the last complaint.</p>
+      </div>
+
+      <div>
+        <div class="pull-stat">
+          <div class="pull-stat-value">Why records undercount? </div>
+        </div>
+
+        <div class="sidebar-callout" role="note">
+          <div class="sidebar-callout-text">
+            Administrative vacancy data is a byproduct of enforcement, reflecting where inspectors have been, not where vacancies exist. <strong>Properties with absentee owners, paid-forward utilities, or no active neighbors are systematically underrepresented.</strong>
+          </div>
+        </div>
+
+        <ul class="sidebar-fact-list" aria-label="Key data facts">
+          <li class="sidebar-fact">
+            <span class="sidebar-fact-value">34</span>
+            <span class="sidebar-fact-desc">Data features used to train the model, across 6 administrative source systems</span>
+          </li>
+          <li class="sidebar-fact">
+            <span class="sidebar-fact-value">5 yrs</span>
+            <span class="sidebar-fact-desc">Historical lookback window on utility, permit, and complaint data</span>
+          </li>
+          <li class="sidebar-fact">
+            <span class="sidebar-fact-value">521</span>
+            <span class="sidebar-fact-desc">Census tracts used for spatial cross-validation — ensuring the model works citywide, not just where training data is dense</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ───────────────────────────────────── -->
+<section class="how-bg section-sm" id="how-it-works" aria-labelledby="how-title">
+  <div class="container">
+    <div class="section-label" style="text-align:center; margin-bottom: 8px;">How it works</div>
+    <h2 class="section-title" id="how-title" style="text-align:center; margin: 0 auto 40px; max-width: 560px;">From raw administrative data to a ranked list of addresses.</h2>
+    <div class="steps-grid">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-title">Data assembly</div>
+        <div class="step-desc">Six city datasets (Violations, Real Estate Transfer, OPA Properties, Spatial Lag, Clean &amp; Seal, and Business Licenses) are joined at the parcel level.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-title">Feature engineering</div>
+        <div class="step-desc">Raw fields are transformed into 34 predictive signals.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-title">Model training</div>
+        <div class="step-desc">The pipeline trains four base learners (logistic regression, random forest, XGBoost, and LightGBM) on 34 features across 352K residential parcels, then blends the calibrated logistic regression and random forest into a 50/50 ensemble validated by ZIP- and tract-grouped spatial cross-validation.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-title">Probability scoring</div>
+        <div class="step-desc">The ensemble outputs a calibrated probability of vacancy for every residential parcel, expressed as a 0 to 100 risk score, a top-one-percent flag, and a five-tier rank bucket for dashboard display.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── DELIVERABLES ──────────────────────────────────── -->
+<section class="deliverables section" id="deliverables" aria-labelledby="del-title">
+  <div class="container">
+    <div class="section-label">Two ways in</div>
+    <h2 class="section-title" id="del-title">Start with the data. Go deep with the methodology.</h2>
+    <p class="section-intro">
+      The model produces two finished artifacts. Use the interactive dashboard to explore parcel-level scores across the city. Read the methodology report to understand how the model was built, validated, and what its limitations are.
+    </p>
+    <div class="del-grid">
+
+      <a href="dashboard.html" class="del-card" aria-label="Open the interactive dashboard">
+        <div class="del-card-header">
+          <div class="del-card-type">Interactive tool</div>
+          <div class="del-card-title">Vacancy Risk Dashboard</div>
+        </div>
+        <div class="del-card-body">
+          <p class="del-card-desc">
+            An interactive map and table showing predicted vacancy risk scores for every residential parcel in Philadelphia. Filter by neighborhood, risk tier, or parcel type.
+          </p>
+          <ul class="del-card-features">
+            <li>Parcel-level risk scores mapped across Philadelphia</li>
+            <li>Filter by risk tier</li>
+            <li>Overlay with existing L&amp;I vacancy designations</li>
+            <li>Export filtered results as CSV</li>
+          </ul>
+          <span class="del-card-action">Open dashboard</span>
+        </div>
+      </a>
+
+      <a href="PhillyStat360 v2.html" class="del-card" aria-label="Read the full methodology report">
+        <div class="del-card-header">
+          <div class="del-card-type">Technical report</div>
+          <div class="del-card-title">Model Methodology &amp; Validation</div>
+        </div>
+        <div class="del-card-body">
+          <p class="del-card-desc">
+            A full account of how the model was built: data sources, feature engineering, training approach, validation strategy, equity audit, and known limitations.
+          </p>
+          <ul class="del-card-features">
+            <li>Data sources: L&amp;I, OPA, Revenue</li>
+            <li>Ensemble model with calibrated probabilities</li>
+            <li>Spatial cross-validation across Philadelphia districts</li>
+            <li>Equity audit by income quartile</li>
+          </ul>
+          <span class="del-card-action">Read the report</span>
+        </div>
+      </a>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── ABOUT BAND ─────────────────────────────────────── -->
+<section class="about-band" id="about" aria-labelledby="about-title">
+  <div class="about-inner">
+    <div>
+      <img src="assets/logo2-white.png" alt="City of Philadelphia" height="44" class="about-logo">
+      <div class="about-col-title">About Philly Stat 360</div>
+      <p class="about-mission">
+        Philly Stat 360 is the City of Philadelphia's performance management initiative. We track how city government is doing — across every department, in plain language — and publish the results for every resident to see.
+      </p>
+      <p class="about-mission" style="margin-top:16px">
+        This vacancy risk model is part of a broader effort to use data to make city services more proactive — finding problems before they become crises, and doing it fairly.
+      </p>
+    </div>
+    <div>
+      <div class="about-col-title">Get in touch</div>
+      <ul class="contact-list">
+        <li>
+          <span class="contact-type">General questions</span>
+          <span class="contact-value"><a href="mailto:innovation@phila.gov">innovation@phila.gov</a></span>
+        </li>
+        <li>
+          <span class="contact-type">Data &amp; methodology</span>
+          <span class="contact-value"><a href="PhillyStat360 v2.html">Read the full methodology report</a></span>
+        </li>
+        <li>
+          <span class="contact-type">Interactive data</span>
+          <span class="contact-value"><a href="dashboard.html">Open the vacancy risk dashboard</a></span>
+        </li>
+        <li>
+          <span class="contact-type">City standards</span>
+          <span class="contact-value"><a href="https://standards.phila.gov" target="_blank" rel="noopener">standards.phila.gov</a></span>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ─────────────────────────────────────────── -->
+<footer role="contentinfo">
+  <div class="footer-inner">
+    <div class="footer-copy">
+      © 2025 City of Philadelphia · Office of Innovation and Technology ·
+      <a href="https://philly-stat-360.phila.gov" target="_blank" rel="noopener">philly-stat-360.phila.gov</a>
+    </div>
+    <ul class="footer-links" role="list">
+      <li><a href="dashboard.html">Dashboard</a></li>
+      <li><a href="PhillyStat360 v2.html">Methodology</a></li>
+      <li><a href="https://www.phila.gov/departments/office-of-innovation-and-technology/" target="_blank" rel="noopener">OIT</a></li>
+      <li><a href="https://standards.phila.gov" target="_blank" rel="noopener">City standards</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var hamburger = document.getElementById('navHamburger');
+  var mobileNav = document.getElementById('mobileNav');
+  var closeBtn  = document.getElementById('mobileNavClose');
+  var mobileLinks = mobileNav.querySelectorAll('.mobile-nav-link, .mobile-nav-cta a');
+
+  function openNav() {
+    mobileNav.classList.add('open');
+    hamburger.setAttribute('aria-expanded', 'true');
+    document.body.style.overflow = 'hidden';
+    closeBtn.focus();
+  }
+
+  function closeNav() {
+    mobileNav.classList.remove('open');
+    hamburger.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+    hamburger.focus();
+  }
+
+  hamburger.addEventListener('click', openNav);
+  closeBtn.addEventListener('click', closeNav);
+
+  // Close on link click
+  mobileLinks.forEach(function(link) {
+    link.addEventListener('click', closeNav);
+  });
+
+  // Close on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && mobileNav.classList.contains('open')) closeNav();
+  });
+
+  // Close on backdrop tap (outside the nav panel)
+  mobileNav.addEventListener('click', function(e) {
+    if (e.target === mobileNav) closeNav();
+  });
+})();
+</script>
+
+</body>
+</html>

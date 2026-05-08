@@ -1,0 +1,650 @@
+---
+title: "PhillyStat360 — Data Inventory & Dictionary"
+author: "MUSA Practicum Team"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(janitor)
+library(scales)
+library(knitr)
+library(kableExtra)
+```
+
+# 1. Purpose
+
+This document is the **comprehensive data reference** for the PhillyStat360 Vacant Property Indicators project. It provides:
+
+- A complete inventory of all datasets used in the project, including source, format, and role
+- **Field-level dictionaries** for every dataset, with descriptions and example values
+- Row counts, time ranges, missing-value rates, and status-value breakdowns
+- The full definition of the OVS (Observed Vacancy Status) dependent variable
+- A catalog of all 54 vacancy-related violation codes identified in the L+I system
+- A list of datasets still pending from the client
+
+This document is intended to be readable by both team members and external stakeholders (client, faculty).
+
+> **Note:** The `rawdata/` folder is excluded from Git due to file size. Team members should download datasets from [OpenDataPhilly](https://opendataphilly.org/) or retrieve them from the shared Box folder.
+
+---
+
+# 2. Data Overview
+
+## 2.1 Downloaded Datasets
+
+All files below are publicly available from OpenDataPhilly unless otherwise noted. They reside in the local `rawdata/` directory.
+
+| # | Filename | Description | OpenDataPhilly Source Page | Role | Join Key |
+|---|----------|-------------|---------------------------|------|----------|
+| 1 | `opa_properties_public.csv` | All Philadelphia parcels — one row per parcel | Properties & Assessment History | **Primary table** | `parcel_number` |
+| 2 | `violations.csv` | L+I code violation records | L+I Code Violations | **OVS definition** + features | `opa_account_num` |
+| 3 | `business_licenses.csv` | All business and activity licenses | L+I Business Licenses | **OVS definition** + features | `opa_account_num` |
+| 4 | `clean_seal.csv` | L+I Clean & Seal work orders | L+I Clean and Seal | **OVS definition** | `opa_account_num` |
+| 5 | `unsafe.csv` | Unsafe structure records | L+I Unsafe Buildings | Feature engineering | `opa_account_num` |
+| 6 | `imm_dang.csv` | Imminently dangerous buildings | L+I Imminently Dangerous | Feature engineering | `opa_account_num` |
+| 7 | `assessments.csv` | Historical property assessments | Properties & Assessment History | Feature engineering | `parcel_number` |
+| 8 | `VIOLATION_DEFINITION.csv` | Violation code lookup table | L+I Code Violations (attachment) | Reference | — |
+
+**Critical join logic:** `opa_account_num` = `parcel_number`. All tables link through this field.
+
+## 2.2 Datasets Available but Not Yet Downloaded
+
+Useful for feature engineering; **not required** for OVS construction. Download during the feature engineering phase if needed.
+
+| Dataset | Format | Notes |
+|---------|--------|-------|
+| Real Estate Transfers | CSV | Very large. The primary table already has `sale_date` and `sale_price` for the most recent transaction; this adds full history (sales, deeds, mortgages since 1999). |
+| Building & Zoning Permits | CSV | L+I permits 2007–present. Potential negative vacancy indicator (recent permit activity implies occupancy). |
+| Zoning Base Districts | Shapefile | Geographic zoning boundaries. Likely unnecessary — the primary table already contains the `zoning` field. |
+
+## 2.3 Datasets Pending from Client
+
+| Dataset | Provider | Status | Description |
+|---------|----------|--------|-------------|
+| **Water Revenue Data** | OIT / Philadelphia Water Dept. | Awaiting legal signatures | The **only non-public data** in the VPI model. Three indicators: (1) water shut-off type (codes 24 and 9), (2) installation type, (3) no usage for 4+ consecutive months. |
+| **VPI Methodology PDF** | Taylor Popp | Awaiting delivery | Detailed documentation of the current VPI scoring methodology. Promised at the January 27 kickoff meeting. |
+
+---
+
+# 3. Dataset Details
+
+```{r load-data, cache=TRUE}
+properties  <- read_csv("../rawdata/opa_properties_public.csv", show_col_types = FALSE) %>% clean_names()
+violations  <- read_csv("../rawdata/violations.csv", show_col_types = FALSE) %>% clean_names()
+licenses    <- read_csv("../rawdata/business_licenses.csv", show_col_types = FALSE) %>% clean_names()
+clean_seal  <- read_csv("../rawdata/clean_seal.csv", show_col_types = FALSE) %>% clean_names()
+unsafe      <- read_csv("../rawdata/unsafe.csv", show_col_types = FALSE) %>% clean_names()
+imm_dang    <- read_csv("../rawdata/imm_dang.csv", show_col_types = FALSE) %>% clean_names()
+assessments <- read_csv("../rawdata/assessments.csv", show_col_types = FALSE) %>% clean_names()
+```
+
+---
+
+## 3.1 opa_properties_public.csv — Primary Parcel Table
+
+The base table for the project. Every parcel (land unit) in Philadelphia has one row. All other datasets are joined to this table.
+
+```{r props-overview}
+cat("Rows:", comma(nrow(properties)), "\n")
+cat("Columns:", ncol(properties), "\n")
+cat("Unique parcel_number:", comma(n_distinct(properties$parcel_number)), "\n")
+cat("parcel_number missing:", sum(is.na(properties$parcel_number)), "\n")
+```
+
+### Field Dictionary
+
+```{r props-fields}
+tribble(
+  ~Field, ~Description, ~Example,
+  "parcel_number",             "Unique parcel identifier (primary key for all joins)",     "881047050",
+  "location",                  "Street address",                                           "1234 MARKET ST",
+  "owner_1 / owner_2",         "Owner name(s)",                                           "SMITH JOHN",
+  "category_code",             "Property category: 1=Residential, 2=Hotels, 3=Store w/ Dwelling, 4=Commercial, 5=Industrial, 6=Vacant Land", "1",
+  "category_code_description", "Human-readable category label",                           "SINGLE FAMILY",
+  "year_built",                "Year of original construction",                            "1920",
+  "total_livable_area",        "Livable floor area in square feet",                        "1200",
+  "total_area",                "Total lot area in square feet",                             "1600",
+  "market_value",              "Current OPA assessed market value (USD)",                    "150000",
+  "sale_date",                 "Date of most recent recorded sale",                        "2019-03-15",
+  "sale_price",                "Price of most recent recorded sale (USD)",                   "85000",
+  "exterior_condition",        "Exterior condition rating (2 = best, 7 = worst; NA for vacant land)", "4",
+  "interior_condition",        "Interior condition rating (same scale as exterior)",        "4",
+  "zoning",                    "Zoning designation code",                                  "RSA5",
+  "zip_code",                  "5-digit zip code",                                         "19134",
+  "census_tract",              "Census tract identifier",                                  "030900",
+  "number_of_bedrooms",        "Number of bedrooms",                                       "3",
+  "number_of_bathrooms",       "Number of bathrooms",                                      "1",
+  "number_stories",            "Number of stories",                                        "2",
+  "garage_spaces",             "Number of garage spaces",                                   "0",
+  "basements",                 "Basement type code",                                        "A",
+  "central_air",               "Central air conditioning (Y/N)",                            "N",
+  "fuel",                      "Heating fuel type",                                         "A",
+  "homestead_exemption",       "Homestead exemption amount (USD)",                            "80000",
+  "building_code",             "OPA building type code",                                    "Y50",
+  "building_code_description", "Building type description",                                 "ROW 2 STY",
+  "general_construction",      "Construction material type",                                "A",
+  "quality_grade",             "Construction quality grade",                                 "C",
+  "topography",                "Topography type",                                           "F",
+  "geographic_ward",           "Geographic ward number",                                    "22",
+  "assessment_date",           "Date of most recent assessment",                            "2025-01-01",
+  "taxable_building",          "Taxable portion of building value (USD)",                     "50000",
+  "taxable_land",              "Taxable portion of land value (USD)",                          "10000"
+) %>% kable() %>% kable_styling(bootstrap_options = "striped", full_width = FALSE, font_size = 13)
+```
+
+### Property Category Distribution
+
+```{r props-category}
+properties %>%
+  count(category_code, category_code_description, sort = TRUE) %>%
+  kable(col.names = c("Code", "Category", "Count")) %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+### Exterior Condition Distribution
+
+```{r props-exterior}
+properties %>%
+  filter(!is.na(exterior_condition)) %>%
+  count(exterior_condition, sort = FALSE) %>%
+  mutate(pct = percent(n / sum(n), accuracy = 0.1)) %>%
+  kable(col.names = c("Condition (2=Best, 7=Worst)", "Count", "Pct")) %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+---
+
+## 3.2 violations.csv — L+I Code Violations
+
+All violation records issued by the Department of Licenses & Inspections. Includes all types — not only vacancy-related.
+
+```{r viol-overview}
+cat("Rows:", comma(nrow(violations)), "\n")
+cat("Columns:", ncol(violations), "\n")
+cat("Distinct parcels:", comma(n_distinct(violations$opa_account_num, na.rm = TRUE)), "\n")
+cat("opa_account_num missing:", comma(sum(is.na(violations$opa_account_num))),
+    "(", percent(mean(is.na(violations$opa_account_num)), accuracy = 0.1), ")\n")
+```
+
+### Field Dictionary
+
+```{r viol-fields}
+tribble(
+  ~Field, ~Description, ~Example,
+  "opa_account_num",          "Parcel ID (join to properties via parcel_number)",   "881047050",
+  "address",                  "Street address of the violation",                     "1234 N BROAD ST",
+  "casenumber",               "L+I case number grouping related violations",         "2019-ABC-12345",
+  "casecreateddate",          "Date the case was opened",                            "2019-03-15",
+  "casecompleteddate",        "Date the case was closed (NULL if still open)",       "2020-01-10",
+  "casetype",                 "Type of inspection case",                             "COMPLAINT",
+  "casestatus",               "Status of the overall case",                          "IN VIOLATION",
+  "caseprioritydesc",         "Priority level of the case",                          "NON-HAZARDOUS",
+  "caseresponsibility",       "Responsible L+I unit",                                "PROPERTY MAINT",
+  "violationnumber",          "Individual violation record identifier",               "123456",
+  "violationdate",            "Date the violation was issued",                        "2019-03-15",
+  "violationcode",            "Violation code (e.g. 9-3905, PM15-901.1)",            "9-3905",
+  "violationcodetitle",       "Human-readable violation description",                "VACANT STRUCTURE LICENSE",
+  "violationstatus",          "Current status of the violation (see breakdown below)","OPEN",
+  "violationresolutiondate",  "Date the violation was resolved (NULL if unresolved)","2020-06-01",
+  "violationresolutioncode",  "How the violation was resolved",                      "COMPLIED",
+  "mostrecentinvestigation",  "Date of most recent L+I site investigation",          "2024-11-05",
+  "zip",                      "Zip code",                                             "19134",
+  "censustract",              "Census tract",                                         "030900",
+  "council_district",         "City council district number",                         "5",
+  "lat / lng",                "Latitude and longitude coordinates",                   "39.98 / -75.15"
+) %>% kable() %>% kable_styling(bootstrap_options = "striped", full_width = FALSE, font_size = 13)
+```
+
+### Time Range
+
+```{r viol-time}
+violations <- violations %>%
+  mutate(violation_date_parsed = as.Date(violationdate))
+
+cat("Earliest violation:", as.character(min(violations$violation_date_parsed, na.rm = TRUE)), "\n")
+cat("Latest violation:", as.character(max(violations$violation_date_parsed, na.rm = TRUE)), "\n")
+```
+
+### Violation Status Breakdown
+
+The `violationstatus` field indicates the current state of each violation record. **Only `OPEN` status violations are used in the OVS definition.**
+
+```{r viol-status}
+violations %>%
+  count(violationstatus, sort = TRUE) %>%
+  mutate(pct = percent(n / sum(n), accuracy = 0.1)) %>%
+  kable(col.names = c("Status", "Count", "Pct"),
+        caption = "OPEN = unresolved, active violation. COMPLIED = owner corrected the issue. CLOSED = case closed by L+I.") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+### Top 20 Most Frequent Violation Codes
+
+```{r viol-top20}
+violations %>%
+  count(violationcode, sort = TRUE) %>%
+  head(20) %>%
+  kable(col.names = c("Violation Code", "Count")) %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+---
+
+## 3.3 business_licenses.csv — Business / Activity Licenses
+
+All licenses issued through L+I. Key license types for this project include **Vacant Property licenses** (used in OVS definition) and **Rental licenses** (a potential negative indicator — active rental license suggests occupancy).
+
+```{r lic-overview}
+cat("Rows:", comma(nrow(licenses)), "\n")
+cat("Columns:", ncol(licenses), "\n")
+cat("Distinct parcels:", comma(n_distinct(licenses$opa_account_num, na.rm = TRUE)), "\n")
+cat("opa_account_num missing:", comma(sum(is.na(licenses$opa_account_num))),
+    "(", percent(mean(is.na(licenses$opa_account_num)), accuracy = 0.1), ")\n")
+```
+
+### Field Dictionary
+
+```{r lic-fields}
+tribble(
+  ~Field, ~Description, ~Example,
+  "opa_account_num",    "Parcel ID (join key)",                              "881047050",
+  "address",            "Licensed property address",                          "1234 N BROAD ST",
+  "licensenum",         "Unique license number",                              "123456",
+  "licensetype",        "Type of license (e.g. Rental, Vacant Residential Property / Lot)", "Rental",
+  "licensestatus",      "Current status (see breakdown below)",              "Active",
+  "revenuecode",        "Revenue code — critical for OVS: 3219=Residential Vacant, 3634=Vacant Commercial", "3219",
+  "rentalcategory",     "Rental category (only for Rental licenses)",        "3",
+  "initialissuedate",   "Date the license was first issued",                 "2019-01-15",
+  "mostrecentissuedate","Date of most recent renewal",                       "2024-01-15",
+  "expirationdate",     "License expiration date",                           "2025-01-15",
+  "inactivedate",       "Date the license became inactive (NULL if active)", "2023-06-01",
+  "numberofunits",      "Number of units covered by the license",            "4",
+  "legalname",          "Legal entity name of the licensee",                  "ABC HOLDINGS LLC",
+  "business_name",      "Business name",                                      "CORNER STORE",
+  "owneroccupied",      "Whether the owner occupies the property (Y/N)",     "N",
+  "zip",                "Zip code",                                           "19134",
+  "censustract",        "Census tract",                                       "030900"
+) %>% kable() %>% kable_styling(bootstrap_options = "striped", full_width = FALSE, font_size = 13)
+```
+
+### Time Range
+
+```{r lic-time}
+licenses <- licenses %>%
+  mutate(issue_date_parsed = as.Date(initialissuedate))
+
+cat("Earliest initial issue date:", as.character(min(licenses$issue_date_parsed, na.rm = TRUE)), "\n")
+cat("Latest initial issue date:", as.character(max(licenses$issue_date_parsed, na.rm = TRUE)), "\n")
+```
+
+### License Status Breakdown
+
+The `licensestatus` field determines whether a license is currently in effect. **Only `Active` Vacant licenses are used in the OVS definition.**
+
+```{r lic-status}
+licenses %>%
+  count(licensestatus, sort = TRUE) %>%
+  mutate(pct = percent(n / sum(n), accuracy = 0.1)) %>%
+  kable(col.names = c("Status", "Count", "Pct"),
+        caption = "Active = currently valid. Inactive = expired or lapsed. Closed = administratively closed.") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+### License Type Distribution (Top 15)
+
+```{r lic-types}
+licenses %>%
+  count(licensetype, sort = TRUE) %>%
+  head(15) %>%
+  kable(col.names = c("License Type", "Count")) %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+### Vacant Licenses by Revenue Code and Status
+
+```{r lic-vacant}
+licenses %>%
+  filter(revenuecode %in% c("3219", "3634")) %>%
+  count(revenuecode, licensestatus, sort = TRUE) %>%
+  kable(col.names = c("Revenue Code", "Status", "Count"),
+        caption = "3219 = Residential Vacant License, 3634 = Vacant Commercial Property") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+---
+
+## 3.4 clean_seal.csv — Clean & Seal Work Orders
+
+Records of properties boarded up ("cleaned and sealed") by L+I due to dangerous or vacant conditions. This is the **dominant source** of OVS = 1 classifications (88.4% of all flagged parcels).
+
+```{r cs-overview}
+cat("Rows:", comma(nrow(clean_seal)), "\n")
+cat("Columns:", ncol(clean_seal), "\n")
+cat("Distinct parcels:", comma(n_distinct(clean_seal$opa_account_num, na.rm = TRUE)), "\n")
+cat("opa_account_num missing:", comma(sum(is.na(clean_seal$opa_account_num))),
+    "(", percent(mean(is.na(clean_seal$opa_account_num)), accuracy = 0.1), ")\n")
+```
+
+### Field Dictionary
+
+```{r cs-fields}
+tribble(
+  ~Field, ~Description, ~Example,
+  "opa_account_num",        "Parcel ID (join key)",                                    "881047050",
+  "address",                "Property address",                                         "1234 N BROAD ST",
+  "casenumber",             "L+I case number",                                          "2018-CS-12345",
+  "casepriority",           "Priority level of the case",                               "HAZARDOUS",
+  "caseresponsibility",     "Responsible L+I unit",                                     "CLEAN & SEAL",
+  "casecreateddate",        "Date the clean & seal case was opened",                   "2018-09-07",
+  "casecompleteddate",      "Date the case was completed (NULL if still open)",        "2018-10-24",
+  "mostrecentinvestigation","Date of most recent site investigation",                   "2024-06-13",
+  "workordertype",          "Type of work order (CLEAN AND SEAL or CLEAN&SEAL)",       "CLEAN AND SEAL",
+  "workorderstatus",        "Status of the work order (see breakdown below)",          "CLOSED",
+  "workordernumber",        "Work order identifier",                                    "WO-12345",
+  "workordercompleteddate", "Date the physical work was completed",                    "2018-10-20",
+  "zip",                    "Zip code",                                                 "19134",
+  "censustract",            "Census tract",                                             "030900",
+  "council_district",       "City council district",                                    "5",
+  "lat / lng",              "Coordinates",                                              "39.98 / -75.15"
+) %>% kable() %>% kable_styling(bootstrap_options = "striped", full_width = FALSE, font_size = 13)
+```
+
+### Time Range
+
+```{r cs-time}
+clean_seal <- clean_seal %>%
+  mutate(case_date_parsed = as.Date(casecreateddate))
+
+cat("Earliest case created:", as.character(min(clean_seal$case_date_parsed, na.rm = TRUE)), "\n")
+cat("Latest case created:", as.character(max(clean_seal$case_date_parsed, na.rm = TRUE)), "\n")
+```
+
+### Work Order Status Breakdown
+
+The `workorderstatus` field indicates whether the boarding-up work was actually completed.
+
+```{r cs-status}
+clean_seal %>%
+  count(workorderstatus, sort = TRUE) %>%
+  mutate(pct = percent(n / sum(n), accuracy = 0.1)) %>%
+  kable(col.names = c("Status", "Count", "Pct"),
+        caption = "CLOSED = work completed. CANCELLED = work order cancelled (building may not have been sealed). Approved = work authorized but not yet completed.") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+---
+
+## 3.5 unsafe.csv — Unsafe Structures
+
+Properties cited for structural safety violations. Not used in the OVS definition, but valuable as a feature — unsafe structure designations are strongly correlated with vacancy.
+
+```{r unsafe-overview}
+cat("Rows:", comma(nrow(unsafe)), "\n")
+cat("Columns:", ncol(unsafe), "\n")
+cat("Distinct parcels:", comma(n_distinct(unsafe$opa_account_num, na.rm = TRUE)), "\n")
+```
+
+### Field Dictionary
+
+```{r unsafe-fields}
+tribble(
+  ~Field, ~Description, ~Example,
+  "opa_account_num",          "Parcel ID (join key)",                        "881047050",
+  "address",                  "Property address",                            "1234 N BROAD ST",
+  "casenumber",               "L+I case number",                             "2019-UNS-12345",
+  "casecreateddate",          "Date the unsafe case was opened",            "2019-04-12",
+  "casecompleteddate",        "Date the case was completed",                "2020-06-01",
+  "caseresponsibility",       "Responsible L+I unit",                        "UNSAFE UNIT",
+  "violationnumber",          "Violation record ID",                         "123456",
+  "violationdate",            "Date the unsafe violation was issued",       "2019-04-12",
+  "violationcode",            "Violation code (typically PM15-108.1)",      "PM15-108.1",
+  "violationcodetitle",       "Violation description",                      "UNSAFE STRUCTURE",
+  "violationresolutiondate",  "Date resolved",                              "2020-06-01",
+  "violationresolutioncode",  "Resolution type",                            "COMPLIED"
+) %>% kable() %>% kable_styling(bootstrap_options = "striped", full_width = FALSE, font_size = 13)
+```
+
+### Time Range
+
+```{r unsafe-time}
+unsafe <- unsafe %>%
+  mutate(viol_date_parsed = as.Date(violationdate))
+
+cat("Earliest unsafe violation:", as.character(min(unsafe$viol_date_parsed, na.rm = TRUE)), "\n")
+cat("Latest unsafe violation:", as.character(max(unsafe$viol_date_parsed, na.rm = TRUE)), "\n")
+```
+
+---
+
+## 3.6 imm_dang.csv — Imminently Dangerous Buildings
+
+The most severe structural designation — buildings at imminent risk of collapse. Very small dataset.
+
+```{r imm-overview}
+cat("Rows:", comma(nrow(imm_dang)), "\n")
+cat("Columns:", ncol(imm_dang), "\n")
+cat("Distinct parcels:", comma(n_distinct(imm_dang$opa_account_num, na.rm = TRUE)), "\n")
+```
+
+### Time Range
+
+```{r imm-time}
+imm_dang <- imm_dang %>%
+  mutate(viol_date_parsed = as.Date(violationdate))
+
+cat("Earliest imm_dang violation:", as.character(min(imm_dang$viol_date_parsed, na.rm = TRUE)), "\n")
+cat("Latest imm_dang violation:", as.character(max(imm_dang$viol_date_parsed, na.rm = TRUE)), "\n")
+```
+
+> Field structure is nearly identical to `unsafe.csv`. The distinguishing violation code is `PM15-110.1` (IMMINENTLY DANGEROUS).
+
+---
+
+## 3.7 assessments.csv — Historical Property Assessments
+
+Longitudinal assessment records: one row per parcel per assessment year. Useful for tracking market value changes over time.
+
+```{r assess-overview}
+cat("Rows:", comma(nrow(assessments)), "\n")
+cat("Columns:", ncol(assessments), "\n")
+cat("Distinct parcels:", comma(n_distinct(assessments$parcel_number, na.rm = TRUE)), "\n")
+```
+
+### Field Dictionary
+
+```{r assess-fields}
+tribble(
+  ~Field, ~Description, ~Example,
+  "parcel_number",    "Parcel ID (join key — same as properties table)", "881047050",
+  "year",             "Assessment year",                                  "2020",
+  "market_value",     "Assessed market value for that year (USD)",         "150000",
+  "taxable_land",     "Taxable land value (USD)",                          "48391",
+  "taxable_building", "Taxable building value (USD)",                      "11609",
+  "exempt_land",      "Exempt land value (USD)",                           "0",
+  "exempt_building",  "Exempt building value (USD)",                       "0"
+) %>% kable() %>% kable_styling(bootstrap_options = "striped", full_width = FALSE, font_size = 13)
+```
+
+### Year Range
+
+```{r assess-year}
+cat("Earliest assessment year:", min(assessments$year, na.rm = TRUE), "\n")
+cat("Latest assessment year:", max(assessments$year, na.rm = TRUE), "\n")
+cat("Distinct years:", n_distinct(assessments$year, na.rm = TRUE), "\n")
+```
+
+---
+
+## 3.8 VIOLATION_DEFINITION.csv — Violation Code Lookup
+
+Reference table mapping violation codes to their official titles and descriptions. Not directly used in modeling, but essential for interpreting violation records.
+
+```{r violdef-overview}
+violation_def <- read_csv("../rawdata/VIOLATION_DEFINITION.csv", show_col_types = FALSE) %>%
+  clean_names()
+
+cat("Rows (total violation codes defined):", comma(nrow(violation_def)), "\n")
+cat("Columns:", ncol(violation_def), "\n")
+```
+
+---
+
+# 4. OVS (Dependent Variable) Definition
+
+**OVS = Observed Vacancy Status.** A parcel is classified as OVS = 1 if it meets **at least one** of the three criteria below.
+
+## 4.1 Source 1: Clean & Seal
+
+- **Dataset:** `clean_seal.csv`
+- **Filter:** Any record present (no time restriction currently applied)
+- **Meaning:** The property was boarded up by the city as a dangerous vacant structure
+
+## 4.2 Source 2: Vacant Violations
+
+- **Dataset:** `violations.csv`
+- **Filter:** `violationcode` is one of the 11 codes below **AND** `violationstatus = 'OPEN'`
+
+| Code | Description | OPEN records in current data |
+|------|-------------|:----------------------------:|
+| 9-3904 | Vacant Lot License | 44 |
+| 9-3905 | Vacant Structure License | 3,404 |
+| PM15-901.1 | Vacant & Open Properties | 1,356 |
+| PM15-901.2 | Vacant Properties — Blighted Condition | 56 |
+| PM15-301 | Vacant Structure & Land | 2,984 |
+| CP-102 | License — Vacant Lot | 0 |
+| CP-103 | License — Vacant Building | 0 |
+| PM-102.4/1 | License — Vacant Lot | 0 |
+| PM-102.4/2 | License — Vacant Residential Building | 0 |
+| PM-102.4/3 | License — Vacant Wharf/Pier | 0 |
+| PM-102.4/4 | License — Vacant Commercial Building | 0 |
+
+> The last 6 codes have zero OPEN records in the current snapshot but are retained per the VacancyGuide methodology. They may appear in historical panel data.
+
+## 4.3 Source 3: Vacant License
+
+- **Dataset:** `business_licenses.csv`
+- **Filter:** `revenuecode IN ('3219', '3634')` **AND** `licensestatus = 'Active'`
+
+| Revenue Code | Description |
+|:------------:|-------------|
+| 3219 | Residential Vacant License |
+| 3634 | Vacant Commercial Property |
+
+## 4.4 Merge Logic
+
+```
+OVS = 1  IF  (parcel ∈ Clean & Seal)
+          OR (parcel has OPEN violation in the 11 codes above)
+          OR (parcel has Active license with revenuecode 3219 or 3634)
+```
+
+**Current result:** 48,671 / 583,802 parcels → **8.3% observed vacancy rate**
+
+**Source overlap among OVS = 1 parcels:**
+
+| Source Combination | Parcels | Share of OVS = 1 |
+|--------------------|--------:|:----------------:|
+| Clean & Seal only | 43,016 | 88.4% |
+| Violation only | 1,738 | 3.6% |
+| License only | 920 | 1.9% |
+| Two sources | 2,899 | 6.0% |
+| All three sources | 98 | 0.2% |
+
+---
+
+# 5. Full Catalog of Vacancy-Related Violation Codes
+
+Beyond the 11 codes used in the OVS definition, there are **54 violation codes** in the L+I system that reference "vacant" in their title or description. The additional 43 codes are not part of the dependent variable but may serve as **predictive features** during modeling (e.g., fire protection violations at vacant buildings, unsafe conditions at vacant properties).
+
+```{r vacancy-codes-full}
+vacant_all <- violation_def %>%
+  filter(str_detect(tolower(violation_code_title), "vacant") |
+         str_detect(tolower(violation_definition), "vacant"))
+
+vacant_all %>%
+  select(violation_code, violation_code_title) %>%
+  arrange(violation_code) %>%
+  kable(col.names = c("Violation Code", "Title"),
+        caption = paste0("All ", nrow(vacant_all),
+                         " vacancy-related violation codes in the L+I system")) %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE, font_size = 13)
+```
+
+---
+
+# 6. Data Linkage Diagram
+
+```
+opa_properties_public.csv  (primary table — 583,802 parcels)
+        │
+        │  parcel_number = opa_account_num
+        │
+        ├── violations.csv            (650K+ records)
+        ├── business_licenses.csv     (425K+ records)
+        ├── clean_seal.csv            (106K+ records)
+        ├── unsafe.csv                (3,292 records)
+        ├── imm_dang.csv              (167 records)
+        │
+        │  parcel_number = parcel_number
+        │
+        └── assessments.csv           (historical assessments, one row per parcel-year)
+
+Pending integration:
+        ├── water_revenue             (from client — join key TBD)
+        ├── real_estate_transfers.csv (to download if needed)
+        └── building_zoning_permits.csv (to download if needed)
+```
+
+---
+
+# 7. Open Decision Points
+
+1. **Clean & Seal temporal filtering** — Any `clean_seal` record currently triggers OVS = 1 regardless of date. Since this single source accounts for 88% of all flagged parcels, adding a time cutoff (e.g., last 5 years) would significantly alter the dependent variable distribution.
+
+2. **Building vs. Land separation** — Tim Haynes (Chief Data Officer, original VPI creator) confirmed at the kickoff meeting that vacant buildings and vacant land must be modeled separately. The `category_code` field is the appropriate split variable (6 = Vacant Land).
+
+3. **Commercial false positives** — The OVS drill-down identified a Philadelphia Parking Authority garage flagged as OVS = 1 solely due to a PM15-901.1 violation, despite active commercial use. Commercial properties may require a filtering step before modeling.
+
+4. **Water utility data** — This is the only non-public data component of the current VPI model, and the reason the full indicator list is not published. It is expected to capture many false negatives — particularly vacant land parcels with no activity in any of the three public OVS sources.
+
+---
+
+# 8. File Checklist
+
+```{r verify-files}
+expected <- c(
+  "opa_properties_public.csv",
+  "violations.csv",
+  "business_licenses.csv",
+  "clean_seal.csv",
+  "unsafe.csv",
+  "imm_dang.csv",
+  "assessments.csv",
+  "VIOLATION_DEFINITION.csv"
+)
+
+cat("Expected files in rawdata/:", length(expected), "\n\n")
+
+# Uncomment when running locally:
+# actual <- list.files("../rawdata/", pattern = "\\.csv$")
+# tibble(
+#   File = expected,
+#   Present = if_else(expected %in% actual, "Yes", "MISSING")
+# ) %>% kable() %>% kable_styling(bootstrap_options = "striped", full_width = FALSE)
+
+for (f in expected) cat(" -", f, "\n")
+cat("\nConfirm all files are present in rawdata/ before running other analysis files.\n")
+```
+
+---
+
+*Last updated: `r Sys.Date()`*

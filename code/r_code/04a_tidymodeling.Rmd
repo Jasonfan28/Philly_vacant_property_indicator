@@ -1,0 +1,1133 @@
+---
+title: "PhillyStat360 — 04a: tidymodeling (R port from Python notebook)"
+output: html_document
+---
+
+R port of `code/python/04a_tidymodeling.ipynb`. Consumes
+`PhillyStat360/data/features_residential.csv` (the output of `03_3_Features.Rmd`)
+and writes all artifacts to `PhillyStat360/data_py/` (kept name for downstream
+compatibility, even though this is R output).
+
+**Library mapping (Python → R)**
+
+- `sklearn.pipeline` → `recipes` + `workflows`
+- `imblearn.SMOTE` → `themis::step_rose()` (closest spiritual equivalent)
+- `sklearn.RandomForestClassifier` → `ranger`
+- `xgboost.XGBClassifier` → `xgboost` (R)
+- `lightgbm.LGBMClassifier` → `lightgbm` (R) via `bonsai`
+- `sklearn.isotonic.IsotonicRegression` → `stats::isoreg` / `probably::cal_estimate_isotonic`
+- `sklearn.metrics` → `yardstick`
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## 0a. Paths
+
+```{r paths}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(tidymodels)
+  library(themis)
+  library(ranger)
+  library(xgboost)
+  library(lightgbm)   # may need: install.packages("lightgbm")
+  library(bonsai)     # tidymodels glue for lightgbm
+  library(yardstick)
+  library(probably)
+  library(digest)
+})
+
+ROOT       <- here::here()       # or set explicitly to the project root
+DATA_PATH  <- file.path(ROOT, "data")
+OUT_PATH   <- file.path(ROOT, "data_py")
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+CACHE_DIR  <- file.path(OUT_PATH, "cache", "04a")
+AUDIT_DIR  <- file.path(GRAPH_PATH, "leakage_audit")
+
+for (p in c(OUT_PATH, GRAPH_PATH, CACHE_DIR, AUDIT_DIR)) {
+  if (!dir.exists(p)) dir.create(p, recursive = TRUE)
+}
+
+stopifnot(file.exists(file.path(DATA_PATH, "features_residential.csv")))
+
+SEED         <- 42
+TRAIN_CUTOFF <- as.Date("2025-10-01")
+set.seed(SEED)
+```
+
+## 0b. GPU detection helper (R xgboost only — RF / lightgbm here are CPU)
+
+```{r gpu-detect}
+detect_gpu <- function() {
+  out <- tryCatch(
+    system("nvidia-smi", intern = TRUE, ignore.stderr = TRUE),
+    error = function(e) NULL, warning = function(w) NULL
+  )
+  if (!is.null(out) && any(grepl("NVIDIA", out))) {
+    message("GPU detected"); return(TRUE)
+  }
+  message("No GPU — falling back to CPU"); FALSE
+}
+USE_GPU <- detect_gpu()
+```
+
+## 1. Load Feature Dataset
+
+```{r load}
+features_df <- read_csv(file.path(DATA_PATH, "features_residential.csv"),
+                        show_col_types = FALSE)
+cat("Rows:", nrow(features_df), " Cols:", ncol(features_df), "\n")
+ovs_rate <- mean(features_df$ovs)
+cat(sprintf("OVS=1: %d (%.1f%%)\n", sum(features_df$ovs), 100 * ovs_rate))
+```
+
+## 2. Feature set & model prep
+
+### 3a. `model_vars`
+
+```{r model-vars}
+model_vars <- c(
+  "n_violations_total", "n_violations_recent",
+  "n_violations_2yr",   "n_violations_3yr",   "n_violations_5yr",
+  "n_distinct_codes",
+  "viol_trend_3v5", "viol_accel_2v3",
+  "n_repeat_codes", "resolution_rate",
+  "has_fire_safety_code",
+  "days_since_last_viol",
+  "license_lapse_rate",
+  "exterior_condition", "building_age",
+  "log_livable_area",   "is_poor_condition",
+  "years_since_sale",
+  "n_cs_total", "cs_span_days", "days_since_last_cs",
+  "n_transfers_total", "n_transfers_5yr", "n_transfers_3yr",
+  "n_deed_transfers",
+  "had_sheriff_sale", "sheriff_sale_recent", "n_sheriff_sales",
+  "log_price_change",
+  "days_since_last_transfer",
+  "nbr_ovs_rate_zip", "nbr_ovs_rate_tract",
+  "nbr_n_vacant_zip", "nbr_n_vacant_tract"
+)
+
+model_vars_leaky <- c(model_vars,
+  "days_oldest_open_viol",
+  "had_vacancy_license", "ever_had_vacant_lic",
+  "had_rental_then_vacant",
+  "has_unsafe", "n_unsafe", "has_imd", "n_imd",
+  "has_structural_code", "has_maintenance_code", "days_since_last_lic")
+
+model_vars_boosting <- model_vars
+
+FEATURE_HASH <- substr(
+  digest::digest(list(sort(model_vars), sort(model_vars_boosting)), algo = "sha1"),
+  1, 8
+)
+cat("Cache fingerprint:", FEATURE_HASH, "\n")
+```
+
+### 3b. Filter & prep `model_df`
+
+```{r model-df}
+model_df <- features_df |>
+  filter(!is.na(exterior_condition), !is.na(building_age))
+
+for (col in c("days_since_last_viol", "days_since_last_transfer")) {
+  if (col %in% names(model_df) && any(is.na(model_df[[col]]))) {
+    med <- median(model_df[[col]], na.rm = TRUE)
+    model_df[[col]] <- replace_na(as.numeric(model_df[[col]]), med)
+  }
+}
+if ("days_oldest_open_viol" %in% names(model_df)) {
+  model_df$days_oldest_open_viol <- replace_na(
+    as.integer(model_df$days_oldest_open_viol), 0L
+  )
+}
+
+model_df$ovs_factor <- factor(
+  model_df$ovs, levels = c(0, 1), labels = c("not_vacant", "vacant")
+)
+cat("model_df:", nrow(model_df), " | OVS=1:", mean(model_df$ovs), "\n")
+```
+
+### 3c. Stratified 70/30 split
+
+```{r split}
+split <- initial_split(model_df, prop = 0.70, strata = ovs)
+train_df <- training(split)
+test_df  <- testing(split)
+
+split_tbl <- tibble(
+  split     = c("train", "test"),
+  n         = c(nrow(train_df), nrow(test_df)),
+  pct       = c(nrow(train_df), nrow(test_df)) / nrow(model_df),
+  ovs1_rate = c(mean(train_df$ovs), mean(test_df$ovs))
+)
+split_tbl
+```
+
+### 3c-bis. Train-only spatial lag recomputation
+
+```{r spatial-lags}
+geo_keys_present <- all(c("zip_code", "census_tract") %in% names(model_df))
+
+if (!geo_keys_present) {
+  message("zip_code or census_tract missing — Leak 6 NOT fixed.")
+} else {
+  zip_train <- train_df |>
+    filter(!is.na(zip_code)) |>
+    group_by(zip_code) |>
+    summarise(zip_n_train = n(),
+              zip_nvac_train = sum(ovs == 1), .groups = "drop")
+  tract_train <- train_df |>
+    filter(!is.na(census_tract)) |>
+    group_by(census_tract) |>
+    summarise(tract_n_train = n(),
+              tract_nvac_train = sum(ovs == 1), .groups = "drop")
+  global_rate <- mean(train_df$ovs)
+
+  recompute_lags <- function(df, is_train) {
+    df <- df |>
+      select(-any_of(c("nbr_ovs_rate_zip", "nbr_ovs_rate_tract",
+                       "nbr_n_vacant_zip", "nbr_n_vacant_tract"))) |>
+      left_join(zip_train,   by = "zip_code") |>
+      left_join(tract_train, by = "census_tract")
+
+    if (is_train) {
+      zip_n_eff      <- pmax(df$zip_n_train - 1, 1)
+      zip_nvac_eff   <- df$zip_nvac_train   - ifelse(df$ovs == 1, 1, 0)
+      tract_n_eff    <- pmax(df$tract_n_train - 1, 1)
+      tract_nvac_eff <- df$tract_nvac_train - ifelse(df$ovs == 1, 1, 0)
+    } else {
+      zip_n_eff      <- df$zip_n_train
+      zip_nvac_eff   <- df$zip_nvac_train
+      tract_n_eff    <- df$tract_n_train
+      tract_nvac_eff <- df$tract_nvac_train
+    }
+
+    df$nbr_ovs_rate_zip   <- coalesce(zip_nvac_eff   / zip_n_eff,   global_rate)
+    df$nbr_ovs_rate_tract <- coalesce(tract_nvac_eff / tract_n_eff, global_rate)
+    df$nbr_n_vacant_zip   <- as.integer(coalesce(zip_nvac_eff,   0))
+    df$nbr_n_vacant_tract <- as.integer(coalesce(tract_nvac_eff, 0))
+
+    df |> select(-any_of(c("zip_n_train", "zip_nvac_train",
+                           "tract_n_train", "tract_nvac_train")))
+  }
+
+  train_df <- recompute_lags(train_df, is_train = TRUE)
+  test_df  <- recompute_lags(test_df,  is_train = FALSE)
+  model_df <- bind_rows(
+    train_df |> mutate(data_split = "train"),
+    test_df  |> mutate(data_split = "test")
+  )
+  cat("Spatial lags recomputed train-only.\n")
+}
+```
+
+## 3d. Overfitting check — plain logistic
+
+```{r overfit-check}
+make_xy <- function(df, feats) {
+  X <- df |> select(all_of(feats))
+  X <- X |> mutate(across(where(is.numeric),
+                          ~ replace_na(.x, median(.x, na.rm = TRUE))))
+  list(X = X, y = df$ovs)
+}
+
+tr_oc <- make_xy(train_df, model_vars)
+te_oc <- make_xy(test_df,  model_vars)
+
+overfit_logit <- glm(y ~ ., data = cbind(tr_oc$X, y = tr_oc$y),
+                     family = binomial())
+
+prob_train_oc <- predict(overfit_logit, tr_oc$X, type = "response")
+prob_test_oc  <- predict(overfit_logit, te_oc$X, type = "response")
+
+auc_fn <- function(y, p) as.numeric(yardstick::roc_auc_vec(
+  factor(y, levels = c(1, 0)), p, event_level = "first"
+))
+brier_fn <- function(y, p) mean((y - p)^2)
+
+auc_train_oc   <- auc_fn(tr_oc$y, prob_train_oc)
+auc_test_oc    <- auc_fn(te_oc$y, prob_test_oc)
+brier_train_oc <- brier_fn(tr_oc$y, prob_train_oc)
+brier_test_oc  <- brier_fn(te_oc$y, prob_test_oc)
+
+tibble(
+  Split = c("Train", "Test", "Gap"),
+  AUC   = c(auc_train_oc, auc_test_oc, auc_train_oc - auc_test_oc),
+  Brier = c(brier_train_oc, brier_test_oc, brier_train_oc - brier_test_oc)
+) |> mutate(across(c(AUC, Brier), \(x) round(x, 4)))
+```
+
+```{r overfit-density-plot, fig.width=11, fig.height=4}
+plot_df <- bind_rows(
+  tibble(prob = prob_train_oc, split = "Train", ovs = tr_oc$y),
+  tibble(prob = prob_test_oc,  split = "Test",  ovs = te_oc$y)
+)
+p <- ggplot(plot_df, aes(prob, fill = split)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~ovs, labeller = labeller(ovs = c(`0` = "OVS = 0", `1` = "OVS = 1"))) +
+  scale_fill_manual(values = c(Train = "#4C78A8", Test = "#F58518")) +
+  labs(title = sprintf("Overfit Check — Train AUC: %.3f | Test AUC: %.3f",
+                       auc_train_oc, auc_test_oc),
+       x = "Predicted probability of vacancy") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "overfit_check_density.png"), p,
+       width = 11, height = 4, dpi = 200)
+p
+```
+
+## 3e. Class-imbalance handling — class-weighted logistic (production)
+
+> The Python version's SMOTE-vs-baseline diagnostic is preserved here; in
+> production we use class weights (no SMOTE).
+
+```{r run-smote-flag}
+RUN_SMOTE_DIAGNOSTIC <- FALSE
+```
+
+```{r smote-vs-baseline, eval=RUN_SMOTE_DIAGNOSTIC}
+# Recipe with ROSE oversampling (R analog to SMOTE)
+rec_smote <- recipe(ovs_factor ~ ., data = train_df |> select(all_of(model_vars), ovs_factor)) |>
+  step_impute_median(all_numeric_predictors()) |>
+  step_zv(all_predictors()) |>
+  themis::step_rose(ovs_factor)
+
+rec_baseline <- recipe(ovs_factor ~ ., data = train_df |> select(all_of(model_vars), ovs_factor)) |>
+  step_impute_median(all_numeric_predictors()) |>
+  step_zv(all_predictors())
+
+logit_spec <- logistic_reg() |> set_engine("glm")
+
+cv <- vfold_cv(train_df, v = 3, strata = ovs)
+
+wf_smote    <- workflow() |> add_recipe(rec_smote)    |> add_model(logit_spec)
+wf_baseline <- workflow() |> add_recipe(rec_baseline) |> add_model(logit_spec)
+
+mset <- metric_set(roc_auc, pr_auc, j_index)
+res_smote    <- fit_resamples(wf_smote,    cv, metrics = mset)
+res_baseline <- fit_resamples(wf_baseline, cv, metrics = mset)
+collect_metrics(res_smote);    collect_metrics(res_baseline)
+```
+
+### Final class-balanced logistic (full train fit)
+
+```{r logit-final}
+cache_logit <- file.path(CACHE_DIR, sprintf("logit_balanced__%s.rds", FEATURE_HASH))
+
+class_wts <- (function() {
+  pos <- mean(train_df$ovs == 1)
+  c(`0` = 0.5 / (1 - pos), `1` = 0.5 / pos)
+})()
+train_w <- ifelse(train_df$ovs == 1, class_wts["1"], class_wts["0"])
+
+if (file.exists(cache_logit)) {
+  pkg <- readRDS(cache_logit)
+  logit_fit <- pkg$logit_fit; prob_logit <- pkg$prob_logit; thresh_logit <- pkg$thresh_logit
+  message("[cache] Loaded class-balanced logit")
+} else {
+  d_train <- bind_cols(
+    train_df |> select(all_of(model_vars)) |>
+      mutate(across(everything(), \(x) replace_na(as.numeric(x), median(as.numeric(x), na.rm = TRUE)))),
+    y = train_df$ovs
+  )
+  logit_fit <- glm(y ~ ., data = d_train, family = binomial(), weights = train_w)
+  d_test <- test_df |> select(all_of(model_vars)) |>
+    mutate(across(everything(), \(x) replace_na(as.numeric(x), median(as.numeric(x), na.rm = TRUE))))
+  prob_logit <- predict(logit_fit, d_test, type = "response")
+
+  roc <- yardstick::roc_curve(
+    tibble(t = factor(test_df$ovs, levels = c(1, 0)), p = prob_logit),
+    truth = t, p, event_level = "first"
+  )
+  j_best <- which.max(roc$sensitivity + roc$specificity - 1)
+  thresh_logit <- list(
+    threshold   = roc$.threshold[j_best],
+    sensitivity = roc$sensitivity[j_best],
+    specificity = roc$specificity[j_best]
+  )
+  saveRDS(list(logit_fit = logit_fit, prob_logit = prob_logit,
+               thresh_logit = thresh_logit), cache_logit)
+}
+
+auc_logit <- auc_fn(test_df$ovs, prob_logit)
+cat(sprintf("Logit — AUC: %.3f | Sens: %.3f | Spec: %.3f\n",
+            auc_logit, thresh_logit$sensitivity, thresh_logit$specificity))
+```
+
+```{r confusion-logit}
+y_test <- test_df$ovs
+pred_class <- as.integer(prob_logit >= thresh_logit$threshold)
+cm <- table(Actual = y_test, Predicted = pred_class)
+print(cm)
+```
+
+## 3f. Leakage audit diagnostics
+
+```{r diag-setup}
+n_not_vacant <- sum(train_df$ovs == 0)
+n_vacant     <- sum(train_df$ovs == 1)
+spw          <- n_not_vacant / max(n_vacant, 1)
+cat(sprintf("scale_pos_weight = %.2f\n", spw))
+
+excluded_leaks <- intersect(c(
+  "has_open_violation", "has_vacancy_kw_code", "has_open_vacancy_kw",
+  "cs_truly_active", "cs_active_2yr",
+  "has_rental_license", "has_active_rental",
+  "ovs_violation", "ovs_clean_seal", "ovs_license"
+), names(model_df))
+cat("Excluded leaks present:", length(excluded_leaks), "\n")
+```
+
+### Diagnostic 6 — correlation heatmap
+
+```{r diag6}
+retained_numeric <- model_vars[sapply(model_df[model_vars], is.numeric)]
+corr_rows <- expand.grid(feature = retained_numeric, leak = excluded_leaks,
+                         stringsAsFactors = FALSE) |> as_tibble()
+corr_rows$r <- mapply(function(f, l) {
+  suppressWarnings(cor(model_df[[f]], as.numeric(model_df[[l]]),
+                       use = "pairwise.complete.obs"))
+}, corr_rows$feature, corr_rows$leak)
+
+corr_flagged <- corr_rows |>
+  mutate(abs_r = abs(r)) |>
+  arrange(desc(abs_r)) |>
+  group_by(feature) |>
+  summarise(max_abs_r = max(abs_r, na.rm = TRUE),
+            top_leak  = first(leak), .groups = "drop") |>
+  arrange(desc(max_abs_r))
+write_csv(corr_flagged, file.path(AUDIT_DIR, "diag6_correlation_summary.csv"))
+
+stealth <- corr_flagged |> filter(max_abs_r > 0.5)
+if (nrow(stealth) > 0) {
+  cat("[!!] STEALTH LEAKS:\n"); print(stealth)
+} else {
+  cat("[OK] No retained feature exceeds |r| > 0.5\n")
+}
+
+heat_p <- ggplot(corr_rows, aes(leak, feature, fill = r)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                       midpoint = 0, limits = c(-1, 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Diag 6: retained features × excluded leaks")
+ggsave(file.path(AUDIT_DIR, "diag6_correlation_heatmap.png"), heat_p,
+       width = 10, height = max(6, 0.3 * length(retained_numeric)), dpi = 200)
+heat_p
+```
+
+### Diagnostic 1/2 — drop-one AUC (XGBoost)
+
+```{r diag12}
+rule4_feats <- c("has_unsafe", "n_unsafe", "has_imd", "n_imd")
+cs_feats    <- c("n_cs_total", "cs_span_days", "days_since_last_cs")
+
+vars_A <- intersect(model_vars_leaky, names(train_df))
+vars_B <- setdiff(vars_A, rule4_feats)
+vars_C <- setdiff(vars_B, cs_feats)
+
+quick_xgb_auc <- function(feat_set) {
+  dtrain <- xgb.DMatrix(data = as.matrix(train_df[, feat_set]),
+                        label = train_df$ovs)
+  dtest  <- xgb.DMatrix(data = as.matrix(test_df[, feat_set]),
+                        label = test_df$ovs)
+  bst <- xgb.train(
+    params = list(objective = "binary:logistic", eval_metric = "auc",
+                  max_depth = 4, eta = 0.1, min_child_weight = 10,
+                  subsample = 0.8, scale_pos_weight = spw,
+                  tree_method = "hist",
+                  device = if (USE_GPU) "cuda" else "cpu"),
+    data = dtrain, nrounds = 300, verbose = 0
+  )
+  p <- predict(bst, dtest)
+  auc_fn(test_df$ovs, p)
+}
+
+auc_A <- quick_xgb_auc(vars_A)
+auc_B <- quick_xgb_auc(vars_B)
+auc_C <- quick_xgb_auc(vars_C)
+
+drop_one_tbl <- tibble(
+  step = c("A: full leaky", "B: minus rule-4", "C: B minus C&S"),
+  n_features = c(length(vars_A), length(vars_B), length(vars_C)),
+  test_auc   = round(c(auc_A, auc_B, auc_C), 4),
+  auc_drop_from_A = round(c(0, auc_A - auc_B, auc_A - auc_C), 4)
+)
+write_csv(drop_one_tbl, file.path(AUDIT_DIR, "diag12_drop_one_auc.csv"))
+drop_one_tbl
+```
+
+## 5. Random Forest
+
+```{r rf-tune-flag}
+TUNE_RF       <- FALSE
+best_rf_mtry  <- floor(sqrt(length(model_vars)))
+best_rf_min_n <- 5L
+rf_tune_csv   <- file.path(OUT_PATH, "rf_tune_results.csv")
+```
+
+```{r rf-tune, eval=TUNE_RF}
+rf_spec <- rand_forest(mtry = tune(), min_n = tune(), trees = 300) |>
+  set_engine("ranger", class.weights = c(`not_vacant` = 1, `vacant` = spw)) |>
+  set_mode("classification")
+
+rec_rf <- recipe(ovs_factor ~ ., data = train_df |>
+                   select(all_of(model_vars), ovs_factor)) |>
+  step_impute_median(all_numeric_predictors()) |>
+  step_zv(all_predictors())
+
+set.seed(SEED)
+tune_idx <- sample.int(nrow(train_df), size = floor(0.10 * nrow(train_df)))
+tune_df  <- train_df[tune_idx, ]
+cv3 <- vfold_cv(tune_df, v = 3, strata = ovs)
+
+grid <- expand.grid(mtry = c(4, 7, 10), min_n = c(2, 5, 10, 15))
+wf_rf <- workflow() |> add_recipe(rec_rf) |> add_model(rf_spec)
+res <- tune_grid(wf_rf, cv3, grid = grid, metrics = metric_set(roc_auc))
+best <- select_best(res, metric = "roc_auc")
+best_rf_mtry  <- best$mtry
+best_rf_min_n <- best$min_n
+write_csv(show_best(res, metric = "roc_auc", n = 6), rf_tune_csv)
+```
+
+```{r rf-load-tuned}
+if (file.exists(rf_tune_csv)) {
+  saved <- read_csv(rf_tune_csv, show_col_types = FALSE)
+  best_rf_mtry  <- as.integer(saved$mtry[1])
+  best_rf_min_n <- as.integer(saved$min_n[1])
+}
+cat("RF params: mtry =", best_rf_mtry, "min_n =", best_rf_min_n, "\n")
+```
+
+### 5c. Final RF fit
+
+```{r rf-final}
+cache_rf <- file.path(CACHE_DIR, sprintf("final_rf_fit__%s.rds", FEATURE_HASH))
+if (file.exists(cache_rf)) {
+  final_rf_fit <- readRDS(cache_rf)
+} else {
+  d_train_rf <- train_df |> select(all_of(model_vars), ovs_factor) |>
+    mutate(across(where(is.numeric),
+                  \(x) replace_na(x, median(x, na.rm = TRUE))))
+  final_rf_fit <- ranger(
+    ovs_factor ~ ., data = d_train_rf,
+    num.trees = 500, mtry = best_rf_mtry, min.node.size = best_rf_min_n,
+    probability = TRUE, classification = TRUE,
+    class.weights = c(not_vacant = 1, vacant = spw),
+    importance = "impurity", seed = SEED, num.threads = parallel::detectCores()
+  )
+  saveRDS(final_rf_fit, cache_rf)
+}
+```
+
+### 5d. RF predictions
+
+```{r rf-predict}
+d_test_rf <- test_df |> select(all_of(model_vars)) |>
+  mutate(across(where(is.numeric),
+                \(x) replace_na(x, median(x, na.rm = TRUE))))
+rf_probs <- predict(final_rf_fit, data = d_test_rf)$predictions[, "vacant"]
+
+roc <- yardstick::roc_curve(
+  tibble(t = factor(test_df$ovs, levels = c(1, 0)), p = rf_probs),
+  truth = t, p, event_level = "first"
+)
+j_best <- which.max(roc$sensitivity + roc$specificity - 1)
+thresh_rf <- list(threshold = roc$.threshold[j_best],
+                  sensitivity = roc$sensitivity[j_best],
+                  specificity = roc$specificity[j_best])
+auc_rf <- auc_fn(test_df$ovs, rf_probs)
+cat(sprintf("RF — AUC: %.3f | Sens: %.3f | Spec: %.3f\n",
+            auc_rf, thresh_rf$sensitivity, thresh_rf$specificity))
+```
+
+## 5.5 XGBoost (diagnostic — not in production ensemble)
+
+```{r xgb-config}
+RETUNE_BOOSTERS <- FALSE
+xgb_tune_csv    <- file.path(OUT_PATH, "xgb_tune_results.csv")
+xgb_default     <- list(nrounds = 600L, max_depth = 5L,
+                        eta = 0.05, min_child_weight = 15)
+
+xgb_params <- function(p) c(list(
+  objective = "binary:logistic", eval_metric = "auc",
+  subsample = 0.8, scale_pos_weight = spw,
+  tree_method = "hist",
+  device = if (USE_GPU) "cuda" else "cpu"
+), p[setdiff(names(p), "nrounds")])
+```
+
+```{r xgb-load-tuned}
+if (file.exists(xgb_tune_csv)) {
+  saved <- read_csv(xgb_tune_csv, show_col_types = FALSE)
+  xgb_best <- list(
+    nrounds = as.integer(saved$trees[1]),
+    max_depth = as.integer(saved$tree_depth[1]),
+    eta = as.numeric(saved$learn_rate[1]),
+    min_child_weight = as.integer(saved$min_n[1])
+  )
+} else {
+  xgb_best <- xgb_default
+}
+```
+
+### 5.5c. Final XGBoost fit
+
+```{r xgb-final}
+cache_xgb <- file.path(CACHE_DIR, sprintf("final_xgb_fit__%s.rds", FEATURE_HASH))
+if (file.exists(cache_xgb)) {
+  final_xgb_fit <- readRDS(cache_xgb)
+} else {
+  dtrain <- xgb.DMatrix(data = as.matrix(train_df[, model_vars_boosting]),
+                        label = train_df$ovs)
+  final_xgb_fit <- xgb.train(
+    params = xgb_params(xgb_best), data = dtrain,
+    nrounds = xgb_best$nrounds, verbose = 0
+  )
+  saveRDS(final_xgb_fit, cache_xgb)
+}
+
+dtest <- xgb.DMatrix(data = as.matrix(test_df[, model_vars_boosting]),
+                     label = test_df$ovs)
+xgb_probs <- predict(final_xgb_fit, dtest)
+roc <- yardstick::roc_curve(
+  tibble(t = factor(test_df$ovs, levels = c(1, 0)), p = xgb_probs),
+  truth = t, p, event_level = "first"
+)
+j_best <- which.max(roc$sensitivity + roc$specificity - 1)
+thresh_xgb <- list(threshold = roc$.threshold[j_best],
+                   sensitivity = roc$sensitivity[j_best],
+                   specificity = roc$specificity[j_best])
+auc_xgb <- auc_fn(test_df$ovs, xgb_probs)
+cat(sprintf("XGBoost — AUC: %.3f\n", auc_xgb))
+```
+
+### XGB variable importance
+
+```{r xgb-vip, fig.height=7}
+imp <- xgb.importance(feature_names = model_vars_boosting,
+                      model = final_xgb_fit)
+imp_p <- imp |> head(20) |>
+  mutate(Feature = factor(Feature, levels = rev(Feature))) |>
+  ggplot(aes(Gain, Feature)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "XGBoost: top 20 importance (gain)") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "xgb_variable_importance.png"), imp_p,
+       width = 8, height = 7, dpi = 200)
+imp_p
+```
+
+## 5.6 LightGBM
+
+```{r lgb}
+cache_lgb <- file.path(CACHE_DIR, sprintf("final_lgb_fit__%s.rds", FEATURE_HASH))
+
+lgb_default <- list(num_iterations = 500L, max_depth = 5L,
+                    learning_rate = 0.05, min_data_in_leaf = 10L)
+lgb_best <- lgb_default
+
+if (file.exists(cache_lgb)) {
+  final_lgb_fit <- lgb.load(filename = cache_lgb)
+} else {
+  dtrain_lgb <- lgb.Dataset(
+    data = as.matrix(train_df[, model_vars_boosting]),
+    label = train_df$ovs
+  )
+  final_lgb_fit <- lgb.train(
+    params = c(list(objective = "binary", metric = "auc",
+                    scale_pos_weight = spw, verbose = -1L,
+                    bagging_fraction = 0.8, bagging_freq = 1L), lgb_best),
+    data = dtrain_lgb, nrounds = lgb_best$num_iterations
+  )
+  lgb.save(final_lgb_fit, filename = cache_lgb)
+}
+
+lgb_probs <- predict(final_lgb_fit, as.matrix(test_df[, model_vars_boosting]))
+auc_lgb <- auc_fn(test_df$ovs, lgb_probs)
+roc <- yardstick::roc_curve(
+  tibble(t = factor(test_df$ovs, levels = c(1, 0)), p = lgb_probs),
+  truth = t, p, event_level = "first"
+)
+j_best <- which.max(roc$sensitivity + roc$specificity - 1)
+thresh_lgb <- list(threshold = roc$.threshold[j_best],
+                   sensitivity = roc$sensitivity[j_best],
+                   specificity = roc$specificity[j_best])
+cat(sprintf("LightGBM — AUC: %.3f\n", auc_lgb))
+```
+
+## 5.7 Probability calibration (isotonic)
+
+```{r calibrate}
+calibrate_probs <- function(raw, y = y_test) {
+  ord <- order(raw)
+  iso <- isoreg(raw[ord], y[ord])
+  # build a step function from sorted unique x → calibrated y
+  ux <- raw[ord]; uy <- iso$yf
+  approx_fn <- approxfun(ux, uy, rule = 2, ties = "ordered")
+  list(fn = approx_fn, calibrated = pmin(pmax(approx_fn(raw), 0), 1))
+}
+
+cal_logit <- calibrate_probs(prob_logit)
+cal_rf    <- calibrate_probs(rf_probs)
+cal_xgb   <- calibrate_probs(xgb_probs)
+cal_lgb   <- calibrate_probs(lgb_probs)
+
+prob_logit_calibrated <- cal_logit$calibrated
+rf_probs_calibrated   <- cal_rf$calibrated
+xgb_probs_calibrated  <- cal_xgb$calibrated
+lgb_probs_calibrated  <- cal_lgb$calibrated
+
+youden_thresh <- function(probs) {
+  roc <- yardstick::roc_curve(
+    tibble(t = factor(y_test, levels = c(1, 0)), p = probs),
+    truth = t, p, event_level = "first"
+  )
+  j_best <- which.max(roc$sensitivity + roc$specificity - 1)
+  list(threshold   = roc$.threshold[j_best],
+       sensitivity = roc$sensitivity[j_best],
+       specificity = roc$specificity[j_best],
+       auc         = auc_fn(y_test, probs))
+}
+thresh_logit_cal <- youden_thresh(prob_logit_calibrated)
+thresh_rf_cal    <- youden_thresh(rf_probs_calibrated)
+thresh_xgb_cal   <- youden_thresh(xgb_probs_calibrated)
+thresh_lgb_cal   <- youden_thresh(lgb_probs_calibrated)
+cat(sprintf("Calibrated AUC — Logit: %.4f | RF: %.4f | XGB: %.4f | LGB: %.4f\n",
+            thresh_logit_cal$auc, thresh_rf_cal$auc,
+            thresh_xgb_cal$auc, thresh_lgb_cal$auc))
+```
+
+### 5.7a. Vacancy Risk Score — Logit + RF ensemble
+
+```{r ensemble}
+ensemble_raw_test <- 0.5 * prob_logit + 0.5 * rf_probs
+cal_ens <- calibrate_probs(ensemble_raw_test)
+ensemble_probs_calibrated <- cal_ens$calibrated
+thresh_ens_cal <- youden_thresh(ensemble_probs_calibrated)
+
+cat(sprintf("Vacancy Risk Score — AUC: %.4f | Sens: %.3f | Spec: %.3f | Thresh: %.3f\n",
+            thresh_ens_cal$auc, thresh_ens_cal$sensitivity,
+            thresh_ens_cal$specificity, thresh_ens_cal$threshold))
+
+pr_auc_fn <- function(y, p) as.numeric(yardstick::pr_auc_vec(
+  factor(y, levels = c(1, 0)), p, event_level = "first"
+))
+ens_pr   <- pr_auc_fn(y_test, ensemble_probs_calibrated)
+logit_pr <- pr_auc_fn(y_test, prob_logit_calibrated)
+rf_pr    <- pr_auc_fn(y_test, rf_probs_calibrated)
+cat(sprintf("PR-AUC — Logit: %.4f | RF: %.4f | Ensemble: %.4f\n",
+            logit_pr, rf_pr, ens_pr))
+```
+
+### 5.7b. Permutation importance (RF & XGB)
+
+```{r perm-importance}
+quick_perm <- function(predict_fn, df, feats, base_auc, n_top = 10) {
+  set.seed(SEED)
+  drops <- vapply(feats, function(f) {
+    df_perm <- df
+    df_perm[[f]] <- sample(df_perm[[f]])
+    p <- predict_fn(df_perm[, feats])
+    base_auc - auc_fn(y_test, p)
+  }, numeric(1))
+  tibble(feature = feats, auc_drop = drops) |>
+    arrange(desc(auc_drop)) |> head(n_top)
+}
+
+base_auc_rf  <- auc_fn(y_test, rf_probs)
+base_auc_xgb <- auc_fn(y_test, xgb_probs)
+
+rf_perm <- quick_perm(
+  function(X) predict(final_rf_fit, data = X)$predictions[, "vacant"],
+  d_test_rf, model_vars, base_auc_rf
+)
+xgb_perm <- quick_perm(
+  function(X) predict(final_xgb_fit, xgb.DMatrix(data = as.matrix(X))),
+  test_df |> select(all_of(model_vars_boosting)),
+  model_vars_boosting, base_auc_xgb
+)
+write_csv(rf_perm,  file.path(AUDIT_DIR, "diag3_rf_permutation_top10.csv"))
+write_csv(xgb_perm, file.path(AUDIT_DIR, "diag3_xgb_permutation_top10.csv"))
+
+p_rf <- ggplot(rf_perm, aes(auc_drop, fct_reorder(feature, auc_drop))) +
+  geom_col(fill = "tomato") + labs(title = "RF perm importance", y = NULL) +
+  theme_minimal()
+p_xgb <- ggplot(xgb_perm, aes(auc_drop, fct_reorder(feature, auc_drop))) +
+  geom_col(fill = "steelblue") + labs(title = "XGB perm importance", y = NULL) +
+  theme_minimal()
+ggsave(file.path(AUDIT_DIR, "diag3_permutation_importance.png"),
+       patchwork::wrap_plots(p_rf, p_xgb, ncol = 2),
+       width = 13, height = 6, dpi = 200)
+p_rf; p_xgb
+```
+
+## 6. Model comparison & composite ranking
+
+```{r composite}
+model_metrics <- function(probs, threshold) {
+  pred <- as.integer(probs >= threshold)
+  tp <- sum(pred == 1 & y_test == 1)
+  fp <- sum(pred == 1 & y_test == 0)
+  fn <- sum(pred == 0 & y_test == 1)
+  tn <- sum(pred == 0 & y_test == 0)
+  sens <- tp / max(tp + fn, 1)
+  spec <- tn / max(tn + fp, 1)
+  list(roc_auc = auc_fn(y_test, probs),
+       pr_auc  = pr_auc_fn(y_test, probs),
+       brier   = brier_fn(y_test, probs),
+       j_index = sens + spec - 1)
+}
+
+raw_scores <- bind_rows(
+  c(model = "logit",    model_metrics(prob_logit_calibrated, thresh_logit_cal$threshold)),
+  c(model = "rf",       model_metrics(rf_probs_calibrated,   thresh_rf_cal$threshold)),
+  c(model = "xgb",      model_metrics(xgb_probs_calibrated,  thresh_xgb_cal$threshold)),
+  c(model = "lgb",      model_metrics(lgb_probs_calibrated,  thresh_lgb_cal$threshold)),
+  c(model = "ensemble", model_metrics(ensemble_probs_calibrated, thresh_ens_cal$threshold))
+) |> mutate(across(c(roc_auc, pr_auc, brier, j_index), as.numeric))
+
+raw_scores <- raw_scores |>
+  mutate(rank_roc   = rank(-roc_auc),
+         rank_pr    = rank(-pr_auc),
+         rank_brier = rank(brier),
+         rank_j     = rank(-j_index),
+         composite  = (rank_roc + rank_pr + rank_brier + rank_j) / 4) |>
+  arrange(composite)
+
+top_model_code  <- "ensemble"
+best_model_name <- "Vacancy Risk Score"
+
+best_probs_test <- list(logit = prob_logit_calibrated, rf = rf_probs_calibrated,
+                        xgb = xgb_probs_calibrated,    lgb = lgb_probs_calibrated,
+                        ensemble = ensemble_probs_calibrated)[[top_model_code]]
+best_thresh <- list(logit = thresh_logit_cal, rf = thresh_rf_cal,
+                    xgb = thresh_xgb_cal, lgb = thresh_lgb_cal,
+                    ensemble = thresh_ens_cal)[[top_model_code]]
+
+write_csv(raw_scores, file.path(AUDIT_DIR, "composite_ranking.csv"))
+raw_scores
+```
+
+### ROC plot — all models
+
+```{r roc-plot, fig.width=8, fig.height=7}
+roc_data <- bind_rows(
+  yardstick::roc_curve(tibble(t = factor(y_test, levels = c(1,0)), p = prob_logit_calibrated),
+                       truth = t, p, event_level = "first") |> mutate(model = "Logistic"),
+  yardstick::roc_curve(tibble(t = factor(y_test, levels = c(1,0)), p = rf_probs_calibrated),
+                       truth = t, p, event_level = "first") |> mutate(model = "Random Forest"),
+  yardstick::roc_curve(tibble(t = factor(y_test, levels = c(1,0)), p = xgb_probs_calibrated),
+                       truth = t, p, event_level = "first") |> mutate(model = "XGBoost"),
+  yardstick::roc_curve(tibble(t = factor(y_test, levels = c(1,0)), p = lgb_probs_calibrated),
+                       truth = t, p, event_level = "first") |> mutate(model = "LightGBM"),
+  yardstick::roc_curve(tibble(t = factor(y_test, levels = c(1,0)), p = ensemble_probs_calibrated),
+                       truth = t, p, event_level = "first") |> mutate(model = "Vacancy Risk Score")
+)
+roc_p <- ggplot(roc_data, aes(1 - specificity, sensitivity, color = model)) +
+  geom_line() +
+  geom_abline(linetype = "dashed", color = "gray") +
+  coord_equal() +
+  labs(title = sprintf("ROC: All Models | Production = %s", best_model_name)) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "roc_all_models.png"), roc_p,
+       width = 8, height = 7, dpi = 200)
+roc_p
+```
+
+### 6a. RF impurity importance
+
+```{r rf-vip, fig.width=8, fig.height=7}
+imp_rf <- tibble(
+  feature = names(final_rf_fit$variable.importance),
+  importance = final_rf_fit$variable.importance
+) |> arrange(desc(importance)) |> head(20) |>
+  mutate(feature = factor(feature, levels = rev(feature)))
+
+rf_vip_p <- ggplot(imp_rf, aes(importance, feature)) +
+  geom_col(fill = "tomato") +
+  labs(title = "Random Forest: top 20 (impurity)") + theme_minimal()
+ggsave(file.path(GRAPH_PATH, "rf_variable_importance.png"), rf_vip_p,
+       width = 8, height = 7, dpi = 200)
+rf_vip_p
+```
+
+### 6b. Diagnostic 4 — missed vs caught positives
+
+```{r diag4}
+diag4_features <- intersect(c(
+  "has_unsafe", "has_imd", "n_unsafe", "n_imd",
+  "days_oldest_open_viol",
+  "days_since_last_cs", "n_cs_total", "cs_span_days",
+  "had_rental_then_vacant", "ever_had_vacant_lic",
+  "n_violations_total", "viol_trend_3v5", "resolution_rate",
+  "nbr_ovs_rate_zip", "nbr_ovs_rate_tract",
+  "n_transfers_5yr", "had_sheriff_sale"
+), names(test_df))
+
+positives <- test_df |>
+  mutate(prob_raw = ensemble_raw_test) |>
+  filter(ovs == 1)
+p10 <- quantile(positives$prob_raw, 0.10)
+p90 <- quantile(positives$prob_raw, 0.90)
+positives <- positives |>
+  mutate(bucket = case_when(
+    prob_raw <= p10 ~ "Missed",
+    prob_raw >= p90 ~ "Caught",
+    TRUE            ~ "Middle"
+  ))
+
+diag4_summary <- positives |>
+  filter(bucket %in% c("Missed", "Caught")) |>
+  group_by(bucket) |>
+  summarise(across(all_of(diag4_features),
+                   \(x) mean(suppressWarnings(as.numeric(x)), na.rm = TRUE)),
+            .groups = "drop")
+write_csv(diag4_summary, file.path(AUDIT_DIR, "diag4_missed_vs_caught.csv"))
+diag4_summary
+```
+
+## 7. Generalization checks
+
+### 7a. Threshold sensitivity
+
+```{r thresh-sens, fig.width=10, fig.height=5}
+thresholds <- seq(0.05, 0.60, by = 0.01)
+thresh_curve <- map_dfr(thresholds, function(t) {
+  pred <- as.integer(best_probs_test >= t)
+  tp <- sum(pred == 1 & y_test == 1)
+  fp <- sum(pred == 1 & y_test == 0)
+  fn <- sum(pred == 0 & y_test == 1)
+  tibble(threshold = t,
+         precision = if ((tp + fp) > 0) tp / (tp + fp) else NA_real_,
+         recall    = if ((tp + fn) > 0) tp / (tp + fn) else NA_real_,
+         flag_rate = mean(pred))
+})
+
+youden_t <- round(best_thresh$threshold, 3)
+ts_long <- thresh_curve |>
+  pivot_longer(-threshold, names_to = "metric", values_to = "value")
+ts_p <- ggplot(ts_long, aes(threshold, value, color = metric)) +
+  geom_line(linewidth = 1) +
+  geom_vline(xintercept = youden_t, linetype = "dashed", color = "gray") +
+  scale_color_manual(values = c(precision = "tomato", recall = "steelblue",
+                                flag_rate = "goldenrod")) +
+  ylim(0, 1) +
+  labs(title = sprintf("Threshold sensitivity — %s", best_model_name)) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "threshold_sensitivity.png"), ts_p,
+       width = 10, height = 5, dpi = 200)
+ggsave(file.path(AUDIT_DIR, "threshold_sensitivity_post_audit.png"), ts_p,
+       width = 10, height = 5, dpi = 200)
+ts_p
+```
+
+### 7b. Full-data predictions (raw + calibrated)
+
+```{r full-predict}
+cache_full <- file.path(CACHE_DIR, sprintf("full_predictions__v3__%s.rds", FEATURE_HASH))
+if (file.exists(cache_full)) {
+  pkg <- readRDS(cache_full)
+  for (nm in names(pkg)) assign(nm, pkg[[nm]])
+} else {
+  d_all_rf <- model_df |> select(all_of(model_vars)) |>
+    mutate(across(where(is.numeric), \(x) replace_na(x, median(x, na.rm = TRUE))))
+  raw_rf    <- predict(final_rf_fit, data = d_all_rf)$predictions[, "vacant"]
+  raw_logit <- predict(logit_fit, d_all_rf, type = "response")
+  raw_xgb   <- predict(final_xgb_fit,
+                       xgb.DMatrix(data = as.matrix(model_df[, model_vars_boosting])))
+  raw_lgb   <- predict(final_lgb_fit, as.matrix(model_df[, model_vars_boosting]))
+  raw_ensemble <- 0.5 * raw_logit + 0.5 * raw_rf
+
+  all_probs_rf       <- pmin(pmax(cal_rf$fn(raw_rf), 0), 1)
+  all_probs_logit    <- pmin(pmax(cal_logit$fn(raw_logit), 0), 1)
+  all_probs_xgb      <- pmin(pmax(cal_xgb$fn(raw_xgb), 0), 1)
+  all_probs_lgb      <- pmin(pmax(cal_lgb$fn(raw_lgb), 0), 1)
+  all_probs_ensemble <- pmin(pmax(cal_ens$fn(raw_ensemble), 0), 1)
+
+  tier_breaks <- c(0, 0.2, 0.4, 0.6, 0.8, 1.0001)
+  tier_labels <- c("Very Unlikely (0–0.2)", "Unlikely (0.2–0.4)",
+                   "Maybe (0.4–0.6)",       "Likely (0.6–0.8)",
+                   "Very Likely (0.8–1.0)")
+  all_probs_best <- list(logit = all_probs_logit, rf = all_probs_rf,
+                         xgb = all_probs_xgb, lgb = all_probs_lgb,
+                         ensemble = all_probs_ensemble)[[top_model_code]]
+
+  rank_threshold_top1pct <- quantile(raw_ensemble, 0.99)
+
+  model_df_pred <- model_df |>
+    mutate(
+      rf_prob = all_probs_rf, logit_prob = all_probs_logit,
+      xgb_prob = all_probs_xgb, lgb_prob = all_probs_lgb,
+      ensemble_prob = all_probs_ensemble,
+      risk_score = round(all_probs_ensemble * 100),
+      rf_prob_raw = raw_rf, logit_prob_raw = raw_logit,
+      xgb_prob_raw = raw_xgb, lgb_prob_raw = raw_lgb,
+      ensemble_prob_raw = raw_ensemble,
+      rf_flag    = as.integer(all_probs_rf    >= thresh_rf_cal$threshold),
+      logit_flag = as.integer(all_probs_logit >= thresh_logit_cal$threshold),
+      xgb_flag   = as.integer(all_probs_xgb   >= thresh_xgb_cal$threshold),
+      lgb_flag   = as.integer(all_probs_lgb   >= thresh_lgb_cal$threshold),
+      ensemble_flag = as.integer(raw_ensemble >= rank_threshold_top1pct),
+      tier = cut(all_probs_best, breaks = tier_breaks,
+                 labels = tier_labels, include.lowest = TRUE)
+    )
+
+  saveRDS(list(
+    all_probs_rf = all_probs_rf, all_probs_logit = all_probs_logit,
+    all_probs_xgb = all_probs_xgb, all_probs_lgb = all_probs_lgb,
+    all_probs_ensemble = all_probs_ensemble,
+    raw_rf = raw_rf, raw_logit = raw_logit, raw_xgb = raw_xgb,
+    raw_lgb = raw_lgb, raw_ensemble = raw_ensemble,
+    model_df_pred = model_df_pred
+  ), cache_full)
+}
+
+all_probs_best <- list(logit = all_probs_logit, rf = all_probs_rf,
+                       xgb = all_probs_xgb, lgb = all_probs_lgb,
+                       ensemble = all_probs_ensemble)[[top_model_code]]
+raw_probs_best <- list(logit = raw_logit, rf = raw_rf,
+                       xgb = raw_xgb, lgb = raw_lgb,
+                       ensemble = raw_ensemble)[[top_model_code]]
+```
+
+### 7c. Five-tier distribution per model
+
+```{r tiers}
+tier_breaks <- c(0, 0.2, 0.4, 0.6, 0.8, 1.0001)
+tier_labels <- c("Very Unlikely (0–0.2)", "Unlikely (0.2–0.4)",
+                 "Maybe (0.4–0.6)",       "Likely (0.6–0.8)",
+                 "Very Likely (0.8–1.0)")
+tier_long <- bind_rows(
+  tibble(model = "Logistic",           prob = all_probs_logit,    ovs = model_df$ovs),
+  tibble(model = "Random Forest",      prob = all_probs_rf,       ovs = model_df$ovs),
+  tibble(model = "XGBoost",            prob = all_probs_xgb,      ovs = model_df$ovs),
+  tibble(model = "LightGBM",           prob = all_probs_lgb,      ovs = model_df$ovs),
+  tibble(model = "Vacancy Risk Score", prob = all_probs_ensemble, ovs = model_df$ovs)
+) |> mutate(tier = cut(prob, tier_breaks, labels = tier_labels,
+                       include.lowest = TRUE))
+
+tier_per_model <- tier_long |>
+  group_by(model, tier) |>
+  summarise(n_parcels = n(),
+            n_observed = sum(ovs == 1),
+            precision  = mean(ovs == 1),
+            .groups = "drop") |>
+  group_by(model) |> mutate(pct_total = n_parcels / sum(n_parcels)) |>
+  ungroup()
+write_csv(tier_per_model, file.path(AUDIT_DIR, "tier_distribution_per_model.csv"))
+tier_per_model
+```
+
+### 7d. Quantile tiers
+
+```{r qtile}
+quantile_tiers <- function(probs, edges = c(0.75, 0.90, 0.95, 0.99)) {
+  qs <- quantile(probs, edges)
+  labels <- c("Bottom 75%", "75–90%", "90–95%", "95–99%", "Top 1%")
+  cut(probs, breaks = c(-Inf, qs, Inf), labels = labels, include.lowest = TRUE)
+}
+best_qtile <- quantile_tiers(all_probs_best)
+qtile_summary <- tibble(tier = best_qtile, ovs = model_df$ovs) |>
+  group_by(tier) |>
+  summarise(n_parcels = n(),
+            n_observed = sum(ovs == 1),
+            precision  = mean(ovs == 1), .groups = "drop") |>
+  mutate(pct_total = n_parcels / sum(n_parcels))
+write_csv(qtile_summary, file.path(AUDIT_DIR, "tier_distribution_quantile.csv"))
+qtile_summary
+```
+
+## 8. Export
+
+```{r export}
+model_df_pred$qtile_tier <- best_qtile
+
+keep_cols <- c("parcel_number", "ovs", "data_split",
+               "ensemble_prob", "risk_score", "ensemble_prob_raw",
+               "ensemble_flag", "qtile_tier",
+               "rf_prob",     "logit_prob",     "xgb_prob",     "lgb_prob",
+               "rf_prob_raw", "logit_prob_raw", "xgb_prob_raw", "lgb_prob_raw",
+               "rf_flag", "logit_flag", "xgb_flag", "lgb_flag")
+optional_cols <- c("ovs_clean_seal", "ovs_violation", "ovs_license")
+keep_cols <- c(keep_cols[1:3],
+               intersect(optional_cols, names(model_df_pred)),
+               keep_cols[4:length(keep_cols)])
+
+model_df_pred |>
+  select(any_of(keep_cols)) |>
+  mutate(best_model = best_model_name) |>
+  write_csv(file.path(OUT_PATH, "all_predictions_rf.csv"))
+
+thr_export <- bind_rows(
+  c(model = "rf",       thresh_rf_cal,    is_best = top_model_code == "rf"),
+  c(model = "logit",    thresh_logit_cal, is_best = top_model_code == "logit"),
+  c(model = "xgb",      thresh_xgb_cal,   is_best = top_model_code == "xgb"),
+  c(model = "lgb",      thresh_lgb_cal,   is_best = top_model_code == "lgb"),
+  c(model = "ensemble", thresh_ens_cal,   is_best = top_model_code == "ensemble")
+) |> rename(sens = sensitivity, spec = specificity)
+write_csv(thr_export, file.path(OUT_PATH, "model_thresholds.csv"))
+
+saveRDS(final_rf_fit,  file.path(OUT_PATH, "model_rf_final.rds"))
+saveRDS(final_xgb_fit, file.path(OUT_PATH, "model_xgb_final.rds"))
+lgb.save(final_lgb_fit, filename = file.path(OUT_PATH, "model_lgb_final.txt"))
+saveRDS(logit_fit,     file.path(OUT_PATH, "model_logit_final.rds"))
+
+saveRDS(list(logit = cal_logit, rf = cal_rf, xgb = cal_xgb,
+             lgb = cal_lgb, ensemble = cal_ens),
+        file.path(OUT_PATH, "calibrators.rds"))
+```
+
+## 9. Equity diagnostic — flag rate by ZIP
+
+```{r equity}
+if (!"zip_code" %in% names(model_df_pred)) {
+  message("zip_code not present — skipping equity audit.")
+} else {
+  eq <- model_df_pred |>
+    filter(!is.na(zip_code)) |>
+    group_by(zip_code) |>
+    summarise(n_parcels = n(),
+              n_flagged = sum(ensemble_flag),
+              n_observed_vacant = sum(ovs == 1),
+              mean_score = mean(risk_score),
+              .groups = "drop") |>
+    mutate(flag_rate    = n_flagged / n_parcels,
+           vacancy_rate = n_observed_vacant / n_parcels)
+
+  flagged_truth <- model_df_pred |>
+    filter(!is.na(zip_code), ensemble_flag == 1) |>
+    group_by(zip_code) |>
+    summarise(tp = sum(ovs == 1), .groups = "drop")
+  eq <- eq |> left_join(flagged_truth, by = "zip_code") |>
+    mutate(precision_at_flag = ifelse(n_flagged > 0, tp / n_flagged, NA_real_))
+
+  eq_meaningful <- eq |> filter(n_parcels >= 500) |> arrange(desc(flag_rate))
+  write_csv(eq_meaningful, file.path(OUT_PATH, "equity_zip_audit.csv"))
+
+  if (nrow(eq_meaningful) > 0) {
+    eq_meaningful <- eq_meaningful |> mutate(diff = flag_rate - vacancy_rate)
+    top5 <- eq_meaningful |> slice_max(diff, n = 5)
+    eq_p <- ggplot(eq_meaningful, aes(vacancy_rate, flag_rate, size = n_parcels)) +
+      geom_point(alpha = 0.55, color = "steelblue") +
+      geom_abline(linetype = "dashed", color = "gray") +
+      ggrepel::geom_text_repel(data = top5, aes(label = zip_code), size = 3) +
+      labs(title = "Equity: flag rate vs observed vacancy rate by ZIP",
+           x = "Observed vacancy rate", y = "Ensemble flag rate") +
+      theme_minimal()
+    ggsave(file.path(GRAPH_PATH, "equity_zip_scatter.png"), eq_p,
+           width = 8, height = 8, dpi = 200)
+    eq_p
+  }
+}
+```
+
+---
+
+**Done.** Outputs in `data_py/`. Production score column for the dashboard is
+`risk_score` (0–100 integer); for ranking & quantile cuts use
+`ensemble_prob_raw` or `qtile_tier`. Equity audit at
+`data_py/equity_zip_audit.csv`. To re-train from scratch, delete
+`data_py/cache/04a/`.

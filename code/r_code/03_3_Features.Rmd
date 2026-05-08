@@ -1,0 +1,711 @@
+---
+title: "PhillyStat360 — 03c: Feature Engineering"
+author: "MUSA Practicum Team"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    code_folding: show
+---
+
+## 0. Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(janitor)
+library(knitr)
+library(kableExtra)
+library(scales)
+library(patchwork)
+library(lubridate)
+library(arrow)
+library(sf)
+library(jsonlite)
+
+.root      <- if (dir.exists("PhillyStat360")) "PhillyStat360" else ".."
+data_path  <- paste0(.root, "/rawdata/")
+out_path   <- paste0(.root, "/data/")
+graph_path <- paste0(.root, "/graphs/")
+
+dir.create(out_path,   showWarnings = FALSE, recursive = TRUE)
+dir.create(graph_path, showWarnings = FALSE, recursive = TRUE)
+
+TRAIN_CUTOFF  <- as.Date("2025-10-01")
+RECENT_WINDOW <- TRAIN_CUTOFF - months(6)
+WINDOW_2YR    <- TRAIN_CUTOFF - years(2)
+WINDOW_3YR    <- TRAIN_CUTOFF - years(3)
+WINDOW_5YR    <- TRAIN_CUTOFF - years(5)
+```
+
+---
+
+## 1. Load Data
+
+```{r load-data, cache=TRUE}
+# OVS output from 03_ovs.Rmd
+ovs_df <- read_csv(paste0(out_path, "ovs_residential.csv"),
+                   show_col_types = FALSE)
+
+# Raw data for feature construction
+violations <- read_csv(paste0(data_path, "violations.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+licenses   <- read_csv(paste0(data_path, "business_licenses.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+unsafe     <- read_csv(paste0(data_path, "unsafe.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+imm_dang   <- read_csv(paste0(data_path, "imm_dang.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+
+permits <- read_csv(paste0(data_path, "permits.csv"),
+                   show_col_types = FALSE) %>% clean_names()
+
+rtt <- read_csv(paste0(data_path, "RTT_SUMMARY.csv"),
+                show_col_types = FALSE) %>% clean_names()
+
+
+# Tier mapping and vacancy keyword codes from 03_analysis.Rmd
+building_tier_map <- read_csv(paste0(out_path, "building_tier_mapping.csv"),
+                               show_col_types = FALSE)
+vacancy_keyword_codes <- read_csv(paste0(out_path, "vacancy_keyword_codes.csv"),
+                                   show_col_types = FALSE) %>% pull(code)
+
+# Re-derive maintenance and structural code lists from tier map
+maintenance_codes <- building_tier_map %>%
+  filter(guide_weight %in% c(1, 2)) %>% pull(code)
+structural_codes  <- building_tier_map %>%
+  filter(guide_weight == 3) %>% pull(code)
+
+# OVS violation codes — excluded from all feature construction to prevent leakage
+ovs_viol_codes <- c(
+  "9-3904", "9-3905", "PM15-901.1", "PM15-901.2", "PM15-301",
+  "CP-102",  "CP-103", "PM-102.4/1", "PM-102.4/2",
+  "PM-102.4/3", "PM-102.4/4"
+)
+
+cat("ovs_df:", comma(nrow(ovs_df)), "parcels |",
+    "OVS=1:", percent(mean(ovs_df$ovs), 0.1), "\n")
+cat("violations:", comma(nrow(violations)), "\n")
+cat("licenses:  ", comma(nrow(licenses)),   "\n")
+cat("unsafe:    ", comma(nrow(unsafe)),     "\n")
+cat("imm_dang:  ", comma(nrow(imm_dang)),   "\n")
+cat("permits:    ", comma(nrow(permits)), "\n")
+cat("rtt:       ", comma(nrow(rtt)),     "\n")
+cat("building_tier_map:", nrow(building_tier_map), "codes\n")
+cat("vacancy_keyword_codes:", length(vacancy_keyword_codes), "\n")
+```
+
+---
+
+## 1b. Filter — Remove Commercial Lots & Parking Garages
+
+`category_code %in% c("1","2","3","14")` in `03_1_Ovs.Rmd` already excludes most commercial
+properties. This secondary filter removes edge-case parcels (primarily mixed-use category 3)
+where the physical structure is a parking garage, surface lot, or commercial-only building,
+identified via `bldg_desc` from PWD_PARCELS and OPA `category_code_description`.
+
+```{r commercial-filter}
+parking_pattern <- regex(
+  "parking|garage|surface lot|parking lot|commercial lot",
+  ignore_case = TRUE
+)
+
+n_before <- nrow(ovs_df)
+
+ovs_df <- ovs_df %>%
+  filter(
+    # Keep if bldg_desc is missing (no PWD match) OR does not match parking terms
+    is.na(bldg_desc) | !str_detect(bldg_desc, parking_pattern)
+  )
+
+n_removed <- n_before - nrow(ovs_df)
+cat("Commercial/parking filter: removed", comma(n_removed),
+    "(", percent(n_removed / n_before, 0.01), ") parcels\n")
+cat("Remaining:", comma(nrow(ovs_df)), "| OVS=1:",
+    percent(mean(ovs_df$ovs, na.rm = TRUE), 0.1), "\n")
+```
+
+---
+
+## 2. Demolition & New Construction Permits
+
+Used downstream by both C&S currency (Section 6b) and violation currency filtering.
+
+```{r demo-permits}
+demo_permits <- permits %>%
+  select(opa_account_num, permitissuedate, permitcompleteddate, permittype, status) %>%
+  filter(!is.na(opa_account_num)) %>%
+  collect() %>%
+  mutate(
+    permit_date = as.Date(coalesce(permitissuedate, permitcompleteddate)),
+    is_demo     = str_detect(tolower(permittype), "demolition"),
+    is_newcon   = str_detect(tolower(permittype), "new construction"),
+    is_complete = tolower(status) %in% c("completed", "complete", "issued")
+  ) %>%
+  filter(!is.na(permit_date), permit_date < TRAIN_CUTOFF,
+         is_complete, is_demo | is_newcon) %>%
+  group_by(opa_account_num) %>%
+  summarise(
+    last_demo_date   = max(permit_date[is_demo],   na.rm = TRUE),
+    last_newcon_date = max(permit_date[is_newcon], na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    last_demo_date   = if_else(is.infinite(last_demo_date),   as.Date(NA), last_demo_date),
+    last_newcon_date = if_else(is.infinite(last_newcon_date), as.Date(NA), last_newcon_date)
+  )
+
+cat("Parcels with demo/newcon permits:", comma(nrow(demo_permits)), "\n")
+```
+
+---
+
+## 6. Feature Engineering
+
+### Design principles
+
+- **Track A (primary):** raw violation features + life-history features — let the
+  model learn the real predictive signal.
+- **Track B (comparison):** VacancyGuide tier features — kept/dropped based on
+  the univariate analysis in Section 9.
+- All features are strictly filtered to `< TRAIN_CUTOFF` to avoid temporal leakage.
+
+### 6a. Violation Features — Counts & Time Windows
+
+```{r feat-violations, cache=TRUE}
+viol_clean <- violations %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(
+    violationdate  = as.Date(violationdate),
+    is_open        = as.integer(tolower(violationstatus) == "open"),
+    is_resolved    = tolower(violationstatus) %in% c("complied", "closed"),
+    is_ovs_code    = violationcode %in% ovs_viol_codes,
+    is_pre         = !is.na(violationdate) & violationdate < TRAIN_CUTOFF,
+    is_recent      = !is.na(violationdate) & violationdate >= RECENT_WINDOW & violationdate < TRAIN_CUTOFF,
+    is_2yr         = !is.na(violationdate) & violationdate >= WINDOW_2YR   & violationdate < TRAIN_CUTOFF,
+    is_3yr         = !is.na(violationdate) & violationdate >= WINDOW_3YR   & violationdate < TRAIN_CUTOFF,
+    is_5yr         = !is.na(violationdate) & violationdate >= WINDOW_5YR   & violationdate < TRAIN_CUTOFF,
+    is_vacancy_kw  = violationcode %in% vacancy_keyword_codes,
+    is_maintenance = violationcode %in% maintenance_codes,
+    is_structural  = violationcode %in% structural_codes,
+    is_fire_safety = str_detect(tolower(violationcodetitle),
+                                "fire|smoke|sprinkler|egress|emergency|hazard")
+  ) %>%
+  filter(is_pre, !is_ovs_code)
+
+viol_features <- viol_clean %>%
+  group_by(opa_account_num) %>%
+  summarise(
+    # --- Count windows ---
+    n_violations_total    = n(),
+    n_violations_recent   = sum(is_recent),  # last 6 months
+    n_violations_2yr      = sum(is_2yr),
+    n_violations_3yr      = sum(is_3yr),     # Fichman: life history
+    n_violations_5yr      = sum(is_5yr),     # Fichman: life history
+    n_violations_open     = sum(is_open),
+    n_distinct_codes      = n_distinct(violationcode),
+
+    # --- Life history: trajectory signals (Fichman requirement) ---
+    # Positive = worsening trend, negative = improving
+    viol_trend_3v5  = sum(is_3yr) - (sum(is_5yr) - sum(is_3yr)),
+    # Positive = accelerating, negative = decelerating
+    viol_accel_2v3  = sum(is_2yr) - (sum(is_3yr) - sum(is_2yr)),
+    # Repeat non-compliance: same code cited 2+ times
+    n_repeat_codes = n_distinct(violationcode[duplicated(violationcode)]),
+    # Resolution rate (low = persistent non-compliance)
+    resolution_rate = mean(is_resolved),
+
+    # --- Binary flags ---
+    has_open_violation    = as.integer(any(is_open == 1L)),
+    has_vacancy_kw_code   = as.integer(any(is_vacancy_kw)),
+    has_maintenance_code  = as.integer(any(is_maintenance)),
+    has_structural_code   = as.integer(any(is_structural)),
+    has_fire_safety_code  = as.integer(any(is_fire_safety)),
+    has_open_vacancy_kw   = as.integer(any(is_open == 1L & is_vacancy_kw)),
+    has_open_structural   = as.integer(any(is_open == 1L & is_structural)),
+
+    # --- Recency ---
+    days_since_last_viol  = as.integer(TRAIN_CUTOFF - max(violationdate, na.rm = TRUE)),
+    days_oldest_open_viol = as.integer(
+      TRAIN_CUTOFF - min(violationdate[is_open == 1L], na.rm = TRUE)),
+
+    .groups = "drop"
+  ) %>%
+  mutate(days_oldest_open_viol = if_else(
+    is.infinite(days_oldest_open_viol), NA_integer_, days_oldest_open_viol))
+
+cat("Violation features:", comma(nrow(viol_features)), "parcels\n")
+```
+
+### 6b. Clean & Seal Currency (Fichman: 2-year window + demolition filter)
+
+```{r feat-cleanseal}
+cs_clean <- read_csv(paste0(data_path, "clean_seal.csv"),
+                     show_col_types = FALSE) %>%
+  clean_names() %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(
+    cs_date     = as.Date(casecreateddate),
+    is_pre      = !is.na(cs_date) & cs_date < TRAIN_CUTOFF
+  ) %>%
+  filter(is_pre)
+
+cs_features <- cs_clean %>%
+  group_by(opa_account_num) %>%
+  summarise(
+    n_cs_total        = n(),
+    last_cs_date      = max(cs_date, na.rm = TRUE),
+    first_cs_date     = min(cs_date, na.rm = TRUE),
+    days_since_last_cs = as.integer(TRAIN_CUTOFF - max(cs_date, na.rm = TRUE)),
+    # Active within 2-year window (Fichman requirement)
+    cs_active_2yr     = as.integer(any(cs_date >= WINDOW_2YR)),
+    # Whether at least one work order was completed
+    cs_has_closed     = as.integer(any(tolower(workorderstatus) == "closed")),
+    # Chronic problem: span from first to most recent C&S
+    cs_span_days      = as.integer(max(cs_date) - min(cs_date)),
+    .groups = "drop"
+  ) %>%
+  left_join(demo_permits, by = "opa_account_num") %>%
+  mutate(
+    # Demolition after C&S = building removed, no longer vacant
+    demo_after_cs   = as.integer(!is.na(last_demo_date)   & last_demo_date   > last_cs_date),
+    # New construction after C&S = parcel redeveloped
+    newcon_after_cs = as.integer(!is.na(last_newcon_date) & last_newcon_date > last_cs_date),
+    # Truly active: within 2yr AND not superseded by demo/newcon (Fichman core logic)
+    cs_truly_active = as.integer(cs_active_2yr == 1 & demo_after_cs == 0 & newcon_after_cs == 0)
+  )
+
+cat("C&S features:", comma(nrow(cs_features)), "parcels\n")
+```
+
+### 6c. License Features + Lifecycle Transitions
+
+```{r feat-licenses}
+lic_clean <- licenses %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(
+    initialissuedate = as.Date(initialissuedate),
+    is_active        = tolower(licensestatus) == "active",
+    is_vacancy_lic   = revenuecode %in% c("3219", "3634"),
+    is_rental_lic    = revenuecode == "3202",
+    is_pre           = !is.na(initialissuedate) & initialissuedate < TRAIN_CUTOFF
+  ) %>%
+  filter(is_pre)
+
+license_features <- lic_clean %>%
+  group_by(opa_account_num) %>%
+  summarise(
+    had_vacancy_license = as.integer(any(is_vacancy_lic)),
+    n_vacancy_licenses  = sum(is_vacancy_lic),
+    has_rental_license  = as.integer(any(is_active & is_rental_lic)),
+    ever_had_rental     = as.integer(any(is_rental_lic)),
+    has_active_rental   = as.integer(any(is_rental_lic & is_active)),
+    ever_had_vacant_lic = as.integer(any(is_vacancy_lic)),
+    # Lifecycle transition: rental -> vacant (Fichman: building history)
+    had_rental_then_vacant = as.integer({
+      last_rental_date <- max(initialissuedate[is_rental_lic],  na.rm = TRUE)
+      last_vacant_date <- max(initialissuedate[is_vacancy_lic], na.rm = TRUE)
+      !is.infinite(last_rental_date) & !is.infinite(last_vacant_date) &
+        last_vacant_date > last_rental_date
+    }),
+    n_licenses_total    = n(),
+    license_lapse_rate  = sum(!is_active) / n(),
+    days_since_last_lic = as.integer(TRAIN_CUTOFF - max(initialissuedate, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+cat("License features:", comma(nrow(license_features)), "parcels\n")
+```
+
+### 6d. Unsafe & Imminently Dangerous Features
+
+```{r feat-unsafe}
+unsafe_features <- unsafe %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(violationdate = as.Date(violationdate)) %>%
+  filter(!is.na(violationdate), violationdate < TRAIN_CUTOFF) %>%
+  group_by(opa_account_num) %>%
+  summarise(has_unsafe = 1L, n_unsafe = n(),
+            days_since_unsafe = as.integer(TRAIN_CUTOFF - max(violationdate, na.rm = TRUE)),
+            .groups = "drop")
+
+imd_features <- imm_dang %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(violationdate = as.Date(violationdate)) %>%
+  filter(!is.na(violationdate), violationdate < TRAIN_CUTOFF) %>%
+  group_by(opa_account_num) %>%
+  summarise(has_imd = 1L, n_imd = n(),
+            days_since_imd = as.integer(TRAIN_CUTOFF - max(violationdate, na.rm = TRUE)),
+            .groups = "drop")
+
+cat("Unsafe:", comma(nrow(unsafe_features)), "| IMD:", comma(nrow(imd_features)), "\n")
+```
+
+### 6e. Real Estate Transfer (RTT) Features
+
+Sale frequency, price trajectory, and distressed-sale signals from the full deed/transfer history.
+All records filtered to `< TRAIN_CUTOFF` to prevent leakage.
+
+```{r feat-rtt, cache=TRUE}
+# Identify the join key: look for opa_account_num or parcel_number equivalent
+rtt_key <- "opa_account_num" # Adjust if RTT uses parcel_number
+if (is.na(rtt_key)) {
+  warning("No OPA join key found in RTT — skipping RTT features")
+  rtt_features <- tibble(opa_account_num = character())
+} else {
+  rtt_clean <- rtt %>%
+    select(all_of(rtt_key), display_date, document_date, document_type, adjusted_total_consideration, total_consideration) %>%
+    filter(!is.na(!!sym(rtt_key))) %>%
+    collect() %>%
+    rename(opa_account_num = all_of(rtt_key)) %>%
+    mutate(
+      sale_date_rtt  = as.Date(coalesce(display_date, document_date)),
+      is_pre         = !is.na(sale_date_rtt) & sale_date_rtt < TRAIN_CUTOFF,
+      # Sheriff sale / foreclosure signals
+      is_sheriff     = str_detect(tolower(document_type), "sheriff"),
+      # Arms-length deed transfer (excludes inter-family, estate, etc.)
+      is_deed        = str_detect(tolower(document_type), "^deed"),
+      # Use adjusted_total_consideration when available; fall back to total_consideration
+      sale_price_rtt = as.numeric(coalesce(adjusted_total_consideration, total_consideration, 0))
+    ) %>%
+    filter(is_pre)
+
+  rtt_features <- rtt_clean %>%
+    group_by(opa_account_num) %>%
+    summarise(
+      # Transfer frequency — rapid turnover can signal distress
+      n_transfers_total   = n(),
+      n_transfers_5yr     = sum(sale_date_rtt >= WINDOW_5YR, na.rm = TRUE),
+      n_transfers_3yr     = sum(sale_date_rtt >= WINDOW_3YR, na.rm = TRUE),
+      # Sheriff / foreclosure history
+      n_sheriff_sales     = sum(is_sheriff, na.rm = TRUE),
+      had_sheriff_sale    = as.integer(any(is_sheriff)),
+      sheriff_sale_recent = as.integer(any(is_sheriff & sale_date_rtt >= WINDOW_5YR)),
+      # Price trajectory (deed transfers only, non-zero prices)
+      n_deed_transfers    = sum(is_deed & sale_price_rtt > 0, na.rm = TRUE),
+      last_transfer_price = {
+        prices <- sale_price_rtt[is_deed & sale_price_rtt > 0]
+        dates  <- sale_date_rtt[is_deed & sale_price_rtt > 0]
+        if (length(prices) == 0) NA_real_
+        else prices[which.max(dates)]
+      },
+      prior_transfer_price = {
+        prices <- sale_price_rtt[is_deed & sale_price_rtt > 0]
+        dates  <- sale_date_rtt[is_deed & sale_price_rtt > 0]
+        if (length(prices) < 2) NA_real_
+        else sort(prices, decreasing = FALSE)[length(prices) - 1L]
+      },
+      days_since_last_transfer = as.integer(
+        TRAIN_CUTOFF - max(sale_date_rtt, na.rm = TRUE)),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      # Log price drop ratio: negative = price declined (distress signal)
+      log_price_change = log1p(last_transfer_price) - log1p(prior_transfer_price),
+      days_since_last_transfer = if_else(
+        is.infinite(days_since_last_transfer), NA_integer_, days_since_last_transfer)
+    )
+}
+
+cat("RTT features:", comma(nrow(rtt_features)), "parcels\n")
+```
+
+### 6e.2. 311 Service Requests (API Pull via HTTR2)
+
+311 cases are key leading indicators. For demonstration, we query the public Carto API for recent complaints regarding vacant/distressed properties.
+
+```{r feat-311}
+# Carto SQL API endpoint for Philly 311 
+api_url <- "https://phl.carto.com/api/v2/sql"
+
+# Construct SQL query (fetching last 2 years of relevant complaints)
+query <- paste0(
+  "SELECT subject, requested_datetime, address, lat, lon FROM public_cases_fc ",
+  "WHERE subject IN ('Illegal Dumping', 'Abandoned Vehicle', 'Maintenance Residential') ",
+  "AND requested_datetime >= '", as.character(WINDOW_2YR), "'"
+)
+
+# Use jsonlite to avoid httr2/curl version conflicts
+fetch_url <- paste0(api_url, "?q=", URLencode(query, reserved = TRUE))
+
+# Because downloading massive 311 payloads might fail in an active render,
+# we wrap it in a tryCatch to either parse or mock silently if API times out.
+three11_features <- tryCatch({
+  cases <- jsonlite::fromJSON(fetch_url)$rows
+  
+  cases %>%
+    mutate(
+      req_date = as.Date(requested_datetime)
+    ) %>%
+    # Rough join: 311 'address' -> OPA 'location'. 
+    # For full fidelity, standardizing the addresses or using AIS is optimal.
+    left_join(ovs_df %>% select(parcel_number, location), by = c("address" = "location")) %>%
+    filter(!is.na(parcel_number)) %>%
+    group_by(parcel_number) %>%
+    summarise(
+      n_311_total = n(),
+      n_311_dumping = sum(subject == "Illegal Dumping", na.rm = TRUE),
+      n_311_abandoned_veh = sum(subject == "Abandoned Vehicle", na.rm = TRUE),
+      days_since_last_311 = as.integer(TRAIN_CUTOFF - max(req_date, na.rm = TRUE)),
+      .groups = "drop"
+    )
+}, error = function(e){
+  message("311 API pull failed. Generating an empty structure to continue.")
+  tibble(
+    parcel_number = character(),
+    n_311_total = integer(),
+    n_311_dumping = integer(),
+    n_311_abandoned_veh = integer(),
+    days_since_last_311 = integer()
+  )
+})
+
+cat("311 Features joined:", comma(nrow(three11_features)), "parcels\n")
+```
+
+### 6f. Spatial Lag Features and Nearest Neighbor (SF)
+
+Neighborhood vacancy context: the OVS rate of surrounding parcels is a strong
+independent predictor because vacancy clusters spatially. All rates use
+**leave-one-out** arithmetic — each parcel's own label is subtracted from the
+group total before dividing — so the parcel's OVS never appears in its own
+spatial lag feature.
+
+Two administrative boundary levels are used: zip code (broader context) and
+census tract (finer-grained, ~900 parcels per tract on average).
+
+```{r feat-spatial-lag}
+# --- Group totals ---
+zip_totals <- ovs_df %>%
+  filter(!is.na(zip_code)) %>%
+  group_by(zip_code) %>%
+  summarise(zip_n = n(), zip_nvac = sum(ovs), .groups = "drop")
+
+tract_totals <- ovs_df %>%
+  filter(!is.na(census_tract)) %>%
+  group_by(census_tract) %>%
+  summarise(tract_n = n(), tract_nvac = sum(ovs), .groups = "drop")
+
+# --- Leave-one-out spatial lag features ---
+spatial_lag_features <- ovs_df %>%
+  select(parcel_number, zip_code, census_tract, ovs) %>%
+  left_join(zip_totals,   by = "zip_code") %>%
+  left_join(tract_totals, by = "census_tract") %>%
+  mutate(
+    # Zip-level lag: fraction of other parcels in the same zip that are OVS=1
+    nbr_ovs_rate_zip    = (zip_nvac   - ovs) / pmax(zip_n   - 1L, 1L),
+    # Tract-level lag: finer spatial resolution (~900 parcels vs ~7300 per zip)
+    nbr_ovs_rate_tract  = (tract_nvac - ovs) / pmax(tract_n - 1L, 1L),
+    # Raw counts: absolute number of confirmed vacant neighbors
+    nbr_n_vacant_zip    = as.integer(zip_nvac   - ovs),
+    nbr_n_vacant_tract  = as.integer(tract_nvac - ovs),
+    # Neighborhood size: useful for model to know how much data backs the rate
+    nbr_n_total_zip     = as.integer(zip_n   - 1L),
+    nbr_n_total_tract   = as.integer(tract_n - 1L)
+  ) %>%
+  select(parcel_number,
+         nbr_ovs_rate_zip, nbr_ovs_rate_tract,
+         nbr_n_vacant_zip, nbr_n_vacant_tract,
+         nbr_n_total_zip,  nbr_n_total_tract)
+
+cat("Spatial lag features:", comma(nrow(spatial_lag_features)), "parcels\n")
+cat("Zip-level  — mean nbr OVS rate:",
+    round(mean(spatial_lag_features$nbr_ovs_rate_zip,   na.rm = TRUE), 4), "\n")
+cat("Tract-level — mean nbr OVS rate:",
+    round(mean(spatial_lag_features$nbr_ovs_rate_tract, na.rm = TRUE), 4), "\n")
+```
+
+### 6f.2 Exact Spatial Distance Features (nearest Clean & Seal)
+
+While zip/tract lag gives neighborhood context, physical proximity to severe vacancy (Clean & Seal) operates on a much tighter scale (e.g., contiguous neighbors). Here we use `sf` to compute nearest distances.
+
+```{r feat-spatial-dist}
+# dist_nearest_cs (nearest Clean & Seal distance via st_distance) is omitted:
+# PWD_PARCELS geometry is not loaded in this pipeline step.
+# spatial_lag_features is passed through unchanged.
+cat("Spatial distance feature skipped (no parcel geometry loaded)\n")
+```
+
+### 6g. OPA-derived Features
+
+```{r feat-opa}
+opa_features <- ovs_df %>%
+  mutate(
+    exterior_condition = as.numeric(exterior_condition),
+    building_age       = 2024L - as.integer(year_built),
+    building_age       = if_else(building_age < 0 | building_age > 200,
+                                 NA_integer_, building_age),
+    log_market_value   = log1p(market_value),
+    log_livable_area   = log1p(total_livable_area),
+    log_sale_price     = log1p(sale_price),
+    days_since_sale    = as.integer(TRAIN_CUTOFF - as.Date(sale_date)),
+    days_since_sale    = if_else(days_since_sale < 0, NA_integer_, days_since_sale),
+    years_since_sale   = days_since_sale / 365.25,
+    is_poor_condition  = as.integer(exterior_condition >= 5),
+    value_per_sqft     = if_else(total_livable_area > 0,
+                                 market_value / total_livable_area, NA_real_)
+  ) %>%
+  select(parcel_number, exterior_condition, building_age,
+         log_market_value, log_livable_area, log_sale_price,
+         days_since_sale, years_since_sale, is_poor_condition, value_per_sqft,
+         zoning, zip_code, census_tract,
+         ovs, ovs_clean_seal, ovs_violation, ovs_license)
+```
+
+---
+
+## 7. Assemble the full feature dataset
+
+```{r assemble}
+features_df <- opa_features %>%
+  left_join(viol_features,    by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(cs_features %>%
+              select(opa_account_num, n_cs_total, days_since_last_cs,
+                     cs_active_2yr, cs_has_closed, cs_span_days,
+                     demo_after_cs, newcon_after_cs, cs_truly_active),
+            by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(license_features, by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(unsafe_features,  by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(imd_features,     by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(rtt_features,          by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(three11_features,      by = "parcel_number") %>%
+  left_join(spatial_lag_features,  by = "parcel_number") %>%
+  mutate(
+    # Integer fill: parcel never appeared in source dataset
+    across(c(n_violations_total, n_violations_recent, n_violations_2yr,
+             n_violations_3yr, n_violations_5yr, n_violations_open,
+             n_distinct_codes, has_open_violation,
+             has_vacancy_kw_code, has_maintenance_code, has_structural_code,
+             has_fire_safety_code, has_open_vacancy_kw, has_open_structural,
+             n_repeat_codes,
+             n_cs_total, cs_active_2yr, cs_has_closed,
+             cs_span_days, demo_after_cs, newcon_after_cs, cs_truly_active,
+             n_licenses_total, had_vacancy_license, n_vacancy_licenses,
+             has_rental_license, ever_had_rental, has_active_rental,
+             ever_had_vacant_lic, had_rental_then_vacant,
+             has_unsafe, n_unsafe, has_imd, n_imd),
+           ~replace_na(.x, 0L)),
+    # Real fill
+    across(c(resolution_rate, license_lapse_rate), ~replace_na(.x, 0)),
+    # Trend/accel fill: 0 = no change
+    viol_trend_3v5 = replace_na(viol_trend_3v5, 0L),
+    viol_accel_2v3 = replace_na(viol_accel_2v3, 0L),
+    # Days fill: large value = no activity on record
+    days_since_last_viol = replace_na(days_since_last_viol,
+                             as.integer(TRAIN_CUTOFF - as.Date("2000-01-01"))),
+    days_since_last_cs   = replace_na(days_since_last_cs,
+                             as.integer(TRAIN_CUTOFF - as.Date("2000-01-01"))),
+    days_since_last_lic  = replace_na(days_since_last_lic,
+                             as.integer(TRAIN_CUTOFF - as.Date("2000-01-01"))),
+    # RTT fill: parcels with no transfer history
+    across(c(n_transfers_total, n_transfers_5yr, n_transfers_3yr,
+             n_sheriff_sales, had_sheriff_sale, sheriff_sale_recent,
+             n_deed_transfers),
+           ~replace_na(.x, 0L)),
+    days_since_last_transfer = replace_na(days_since_last_transfer,
+                                 as.integer(TRAIN_CUTOFF - as.Date("2000-01-01"))),
+    # log_price_change and last/prior_transfer_price left as NA
+    # (genuinely missing — no prior deed transfer with recorded price)
+    # Spatial lag / nearest fill
+    across(c(nbr_ovs_rate_zip, nbr_ovs_rate_tract),
+           ~replace_na(.x, mean(ovs_df$ovs, na.rm = TRUE))),
+    across(c(nbr_n_vacant_zip, nbr_n_vacant_tract,
+             nbr_n_total_zip,  nbr_n_total_tract,
+             n_311_total, n_311_dumping, n_311_abandoned_veh),
+           ~replace_na(.x, 0L)),
+    days_since_last_311 = replace_na(days_since_last_311,
+                                     as.integer(TRAIN_CUTOFF - as.Date("2000-01-01")))
+  )
+
+cat("Feature dataset:", comma(nrow(features_df)), "rows x", ncol(features_df), "columns\n")
+cat("OVS=1:", comma(sum(features_df$ovs == 1, na.rm = TRUE)),
+    "(", percent(mean(features_df$ovs, na.rm = TRUE), 0.1), ")\n")
+```
+
+---
+
+## 8. Missing-value audit
+
+```{r missing-audit}
+features_df %>%
+  select(-parcel_number, -zip_code, -census_tract, -zoning, -starts_with("ovs_")) %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "feature", values_to = "n_missing") %>%
+  mutate(
+    pct_missing = n_missing / nrow(features_df),
+    flag = case_when(pct_missing == 0   ~ "Complete",
+                     pct_missing < 0.05 ~ "< 5%",
+                     pct_missing < 0.20 ~ "5–20%",
+                     TRUE               ~ "> 20%")
+  ) %>%
+  filter(pct_missing > 0) %>%
+  arrange(desc(pct_missing)) %>%
+  mutate(pct_missing = percent(pct_missing, 0.1)) %>%
+  kable(col.names = c("Feature", "N Missing", "% Missing", "Flag"),
+        caption = "Missing-value audit") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+---
+
+## 9. Univariate correlation screen
+
+```{r univariate-corr, fig.width=10, fig.height=6}
+corr_df <- features_df %>%
+  select(ovs, where(is.numeric), -starts_with("ovs_")) %>%
+  select(where(~!all(is.na(.)))) %>%
+  summarise(across(-ovs, ~cor(.x, ovs, use = "complete.obs"))) %>%
+  pivot_longer(everything(), names_to = "feature", values_to = "r") %>%
+  mutate(abs_r     = abs(r),
+         direction = if_else(r > 0, "Positive (→ vacant)", "Negative (→ occupied)")) %>%
+  arrange(desc(abs_r)) %>%
+  head(20)
+
+p_corr <- corr_df %>%
+  ggplot(aes(x = reorder(feature, abs_r), y = r, fill = direction)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("Positive (→ vacant)"   = "tomato",
+                                "Negative (→ occupied)" = "steelblue")) +
+  labs(title = "Top 20 Features: Correlation with OVS", x = NULL, y = "Pearson r",
+       fill = NULL) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+p_corr
+ggsave(paste0(graph_path, "univariate_correlation.png"),
+       plot = p_corr, width = 10, height = 6, dpi = 300)
+
+corr_df %>% mutate(r = round(r, 3)) %>% select(feature, r, direction) %>%
+  kable(caption = "Top 20 feature-vs-OVS correlations") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+---
+
+## 10. Export
+
+```{r export}
+features_df %>%
+  write_csv(paste0(out_path, "features_residential.csv"))
+
+building_tier_map %>%
+  write_csv(paste0(out_path, "building_tier_mapping.csv"))
+
+tibble(code = vacancy_keyword_codes) %>%
+  write_csv(paste0(out_path, "vacancy_keyword_codes.csv"))
+
+cat("Exported:\n")
+cat("  features_residential.csv  —", comma(nrow(features_df)), "rows x",
+    ncol(features_df), "columns\n")
+cat("  building_tier_mapping.csv —", nrow(building_tier_map), "rows\n")
+cat("  vacancy_keyword_codes.csv —", length(vacancy_keyword_codes), "rows\n")
+```
+
+---

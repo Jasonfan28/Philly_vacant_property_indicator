@@ -1,0 +1,115 @@
+---
+title: "PhillyStat360 — 04f: Per-parcel explanations (TreeSHAP, R port)"
+output: html_document
+---
+
+R port of `code/python/04f_local_explanations.ipynb`. Generates per-parcel
+SHAP-like contributions for the top-N flagged parcels using the `treeshap`
+package (R analog of Python's `shap.TreeExplainer`).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(ranger)
+  # treeshap and ranger.unify
+  if (!requireNamespace("treeshap", quietly = TRUE)) {
+    message("Install treeshap: install.packages('treeshap') (or remotes::install_github('ModelOriented/treeshap')")
+  }
+  library(treeshap)
+})
+
+ROOT       <- here::here()
+DATA_PATH  <- file.path(ROOT, "data")
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+SEED <- 42
+```
+
+## 1. Load model, features, predictions
+
+```{r load}
+rf <- readRDS(file.path(PY_PATH, "model_rf_final.rds"))
+feat_full <- read_csv(file.path(DATA_PATH, "features_residential.csv"),
+                      show_col_types = FALSE) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number)))
+
+X_cols <- rf$forest$independent.variable.names
+cat("Features used:", length(X_cols), "\n")
+
+preds <- read_csv(file.path(PY_PATH, "predictions_04b.csv"),
+                  show_col_types = FALSE) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number)))
+```
+
+## 2. Top-N flagged parcels
+
+```{r top-n}
+TOP_N <- 200L
+top_parcels <- preds |>
+  arrange(desc(ensemble_prob)) |>
+  head(TOP_N) |>
+  left_join(feat_full |> select(parcel_number, all_of(X_cols)),
+            by = "parcel_number")
+```
+
+## 3. TreeSHAP
+
+```{r treeshap}
+X_top <- top_parcels |> select(all_of(X_cols)) |>
+  mutate(across(where(is.numeric), \(x) replace_na(x, median(x, na.rm = TRUE))))
+
+unified <- treeshap::ranger.unify(rf, as.data.frame(X_top))
+shap_obj <- treeshap::treeshap(unified, as.data.frame(X_top), verbose = FALSE)
+
+# shap_obj$shaps is a data frame n × p with SHAP values per feature
+shap_mat <- as.matrix(shap_obj$shaps)
+cat("SHAP matrix:", nrow(shap_mat), "×", ncol(shap_mat), "\n")
+```
+
+## 4. Tidy per-parcel explanation table
+
+```{r tidy}
+top_5_per_parcel <- function(i) {
+  s <- shap_mat[i, ]
+  ord <- order(abs(s), decreasing = TRUE)[1:5]
+  tibble(
+    parcel_number = top_parcels$parcel_number[i],
+    ensemble_prob = top_parcels$ensemble_prob[i],
+    ovs = top_parcels$ovs[i],
+    feature = colnames(shap_mat)[ord],
+    value   = as.numeric(X_top[i, ord]),
+    shap    = s[ord],
+    direction = ifelse(s[ord] > 0, "pushed up", "pushed down")
+  )
+}
+
+out <- map_dfr(seq_len(nrow(shap_mat)), top_5_per_parcel)
+write_csv(out, file.path(OUT_PATH, "parcel_shap_topflags.csv"))
+cat("Wrote", nrow(out), "rows\n")
+head(out, 15)
+```
+
+## 5. Global summary across top-N
+
+```{r global, fig.width=8, fig.height=6}
+mean_abs <- tibble(
+  feature = colnames(shap_mat),
+  mean_abs = colMeans(abs(shap_mat))
+) |> arrange(desc(mean_abs)) |> head(15) |>
+  mutate(feature = factor(feature, levels = rev(feature)))
+
+shap_p <- ggplot(mean_abs, aes(mean_abs, feature)) +
+  geom_col(fill = "#1f77b4") +
+  labs(title = sprintf("Top features driving flags (top %d parcels)", TOP_N),
+       x = "mean(|SHAP|)", y = NULL) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "shap_summary_topflags.png"),
+       shap_p, width = 8, height = 6, dpi = 200)
+shap_p
+```

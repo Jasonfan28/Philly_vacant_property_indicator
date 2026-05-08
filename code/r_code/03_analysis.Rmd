@@ -1,0 +1,1091 @@
+---
+title: "PhillyStat360 — Violation Mapping, Baseline & Feature Engineering"
+author: "MUSA Practicum Team"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    code_folding: show
+---
+
+## 0. Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(janitor)
+library(knitr)
+library(kableExtra)
+library(scales)
+library(patchwork)
+library(sf)
+library(lubridate)
+library(broom)
+library(pROC)
+library(caret)
+
+data_path  <- "../rawdata/"
+out_path   <- "../data/"
+graph_path <- "../graphs/"
+
+dir.create(out_path,   showWarnings = FALSE, recursive = TRUE)
+dir.create(graph_path, showWarnings = FALSE, recursive = TRUE)
+
+# Temporal Anchor: All predictive variables must strictly precede this date
+TRAIN_CUTOFF  <- as.Date("2025-10-01")
+RECENT_WINDOW <- TRAIN_CUTOFF - months(6)
+```
+
+---
+
+## 1. load data
+
+```{r read-data, cache=TRUE}
+properties <- read_csv(paste0(data_path, "opa_properties_public.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+clean_seal  <- read_csv(paste0(data_path, "clean_seal.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+violations  <- read_csv(paste0(data_path, "violations.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+licenses    <- read_csv(paste0(data_path, "business_licenses.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+unsafe      <- read_csv(paste0(data_path, "unsafe.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+imm_dang    <- read_csv(paste0(data_path, "imm_dang.csv"),
+                        show_col_types = FALSE) %>% clean_names()
+parcel_sf   <- st_read(paste0(data_path, "PWD_PARCELS.geojson"),
+                       quiet = TRUE) %>% clean_names()
+permits    <- read_csv(paste0(data_path, "permits_2020.csv"),
+                       show_col_types = FALSE) %>% clean_names()
+
+# Load VIOLATION_DEFINITION.csv if available for tier mapping display
+violation_def_path <- paste0(data_path, "VIOLATION_DEFINITION.csv")
+if (file.exists(violation_def_path)) {
+  violation_def <- read_csv(violation_def_path, show_col_types = FALSE) %>%
+    clean_names()
+} else {
+  violation_def <- NULL
+  message("VIOLATION_DEFINITION.csv not found; skipping code title display.")
+}
+
+cat("properties:", comma(nrow(properties)), "\n")
+cat("clean_seal:", comma(nrow(clean_seal)), "\n")
+cat("violations:", comma(nrow(violations)), "\n")
+cat("licenses:  ", comma(nrow(licenses)),   "\n")
+cat("unsafe:    ", comma(nrow(unsafe)),     "\n")
+cat("permits:   ", comma(nrow(permits)),    "\n")
+cat("imm_dang:  ", comma(nrow(imm_dang)),   "\n")
+cat("parcel_sf: ", comma(nrow(parcel_sf)),  "\n")
+```
+
+---
+
+## 2. Construct OVS (Observed Vacancy Status)
+
+Following the VacancyGuide2026 methodology, OVS=1 if any of the following are met:
+
+- **Source 1: Clean & Seal** — Property appears in L&I Clean & Seal records
+- **Source 2: Vacant Violations** — Has vacancy-related violation codes with status = 'OPEN'.
+- **Source 3: Vacant License** — Holds an active vacant property license (Residential 3219 or Commercial 3634).
+
+### 2a. Source 1 — Clean & Seal
+
+```{r ovs-cleanseal}
+# Identify parcels with completed demolition permits following a Clean & Seal event
+demo_after_seal <- clean_seal %>%
+  filter(!is.na(opa_account_num)) %>%
+  select(opa_account_num, casecreateddate) %>%
+  inner_join(
+    permits %>%
+      filter(tolower(permittype) == "demolition",
+             !is.na(permitcompleteddate),
+             tolower(status) == "completed") %>%
+      select(opa_account_num, permitcompleteddate),
+    by = "opa_account_num"
+  ) %>%
+  filter(permitcompleteddate > casecreateddate) %>%
+  distinct(opa_account_num)
+
+cs_parcels <- clean_seal %>%
+  filter(!is.na(opa_account_num)) %>%
+  # Fichman fix 1: within a 2 year window
+  filter(casecreateddate >= (TRAIN_CUTOFF - lubridate::years(2))) %>%
+  # Fichman fix 2: demolition after clean and seal = empty lot
+  anti_join(demo_after_seal, by = "opa_account_num") %>%
+  distinct(opa_account_num) %>%
+  mutate(ovs_clean_seal = 1)
+
+cat("Unique Clean & Seal parcels (2yr window + demolition filter):", comma(nrow(cs_parcels)), "\n")
+```
+
+### 2b. Source 2 — Open Vacant Violations
+
+```{r ovs-violations}
+# 11 vacancy violation codes used for OVS definition (not used as predictors)
+ovs_viol_codes <- c(
+  "9-3904", "9-3905", "PM15-901.1", "PM15-901.2", "PM15-301",
+  "CP-102",  "CP-103", "PM-102.4/1", "PM-102.4/2",
+  "PM-102.4/3", "PM-102.4/4"
+)
+
+viol_parcels <- violations %>%
+  filter(violationcode %in% ovs_viol_codes,
+         tolower(violationstatus) == "open") %>%
+  distinct(opa_account_num) %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(ovs_violation = 1)
+
+cat("Parcels with OPEN vacant violations:", comma(nrow(viol_parcels)), "\n")
+
+violations %>%
+  filter(violationcode %in% ovs_viol_codes,
+         tolower(violationstatus) == "open") %>%
+  count(violationcode, sort = TRUE) %>%
+  kable(caption = "Distribution of OPEN Vacant Violation Codes") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+### 2c. Source 3 — Active Vacant License
+
+```{r ovs-license}
+# 3219 = Residential Vacant, 3634 = Commercial Vacant
+vacant_license_parcels <- licenses %>%
+  filter(tolower(licensestatus) == "active",
+         revenuecode %in% c("3219", "3634")) %>%
+  distinct(opa_account_num) %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(ovs_license = 1)
+
+cat("Parcels with active vacant licenses:", comma(nrow(vacant_license_parcels)), "\n")
+```
+
+### 2d. Merge OVS to Properties
+
+```{r ovs-merge}
+ovs_df <- properties %>%
+  select(parcel_number, location, owner_1, category_code, category_code_description,
+         year_built, total_livable_area, market_value, sale_date, sale_price,
+         exterior_condition, interior_condition,
+         zoning, zip_code, census_tract) %>%
+  left_join(cs_parcels,             by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(viol_parcels,           by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(vacant_license_parcels, by = c("parcel_number" = "opa_account_num")) %>%
+  replace_na(list(ovs_clean_seal = 0, ovs_violation = 0, ovs_license = 0)) %>%
+  mutate(
+    ovs         = if_else(ovs_clean_seal == 1 | ovs_violation == 1 | ovs_license == 1, 1, 0),
+    ovs_sources = ovs_clean_seal + ovs_violation + ovs_license
+  )
+
+cat("Total parcels:", comma(nrow(ovs_df)), "\n")
+cat("OVS=1:  ", comma(sum(ovs_df$ovs == 1)),
+    "(", percent(mean(ovs_df$ovs), 0.1), ")\n")
+cat("OVS=0:  ", comma(sum(ovs_df$ovs == 0)), "\n")
+```
+
+### 2e. Filter for Residential + Join Geometry
+
+Includes: Single Family (1), Multi-Family (2), Mixed (3), Large Apartments > 4 units (14).
+
+```{r filter-attach}
+ovs_df <- ovs_df %>%
+  filter(category_code %in% c("1", "2", "3", "14")) %>%
+  left_join(
+    parcel_sf %>% select(brt_id, bldg_desc, shape_area, shape_length, geometry),
+    by = c("parcel_number" = "brt_id")
+  ) %>%
+  st_as_sf()
+
+cat("Post-filter parcels:", comma(nrow(ovs_df)), "\n")
+cat("OVS=1:", comma(sum(ovs_df$ovs == 1)),
+    "(", percent(mean(ovs_df$ovs), 0.1), ")\n")
+```
+
+### 2f. OVS Source Overlap Analysis
+
+```{r ovs-overlap}
+ovs_positive <- ovs_df %>% filter(ovs == 1)
+
+cat("=== OVS=1 Source Breakdown ===\n")
+cat("Clean & Seal Only:", comma(sum(ovs_positive$ovs_clean_seal==1 & ovs_positive$ovs_violation==0 & ovs_positive$ovs_license==0)), "\n")
+cat("Violation Only:   ", comma(sum(ovs_positive$ovs_clean_seal==0 & ovs_positive$ovs_violation==1 & ovs_positive$ovs_license==0)), "\n")
+cat("License Only:     ", comma(sum(ovs_positive$ovs_clean_seal==0 & ovs_positive$ovs_violation==0 & ovs_positive$ovs_license==1)), "\n")
+cat("Two-source overlap:       ", comma(sum(ovs_positive$ovs_sources == 2)), "\n")
+cat("Three-source overlap:       ", comma(sum(ovs_positive$ovs_sources == 3)), "\n")
+```
+
+```{r ovs-overlap-plot, fig.width=8, fig.height=5}
+p_combo <- ovs_positive %>%
+  st_drop_geometry() %>%
+  mutate(source_combo = case_when(
+    ovs_clean_seal==1 & ovs_violation==1 & ovs_license==1 ~ "All Three",
+    ovs_clean_seal==1 & ovs_violation==1 ~ "Clean&Seal + Violation",
+    ovs_clean_seal==1 & ovs_license==1   ~ "Clean&Seal + License",
+    ovs_violation==1  & ovs_license==1   ~ "Violation + License",
+    ovs_clean_seal==1 ~ "Clean & Seal Only",
+    ovs_violation==1  ~ "Violation Only",
+    ovs_license==1    ~ "License Only"
+  )) %>%
+  count(source_combo, sort = TRUE) %>%
+  ggplot(aes(x = reorder(source_combo, n), y = n)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Distribution of OVS=1 Parcels by Source Combination", x = NULL, y = "parcel count") +
+  theme_minimal()
+
+p_combo
+ggsave(paste0(graph_path, "ovs_combination_plot.png"),
+       plot = p_combo, width = 10, height = 6, dpi = 300)
+```
+
+---
+
+## 3. VacancyGuide Violation Tier Mapping
+
+Constructs the violation code tier table (108 codes) for feature engineering.
+
+VacancyGuide2026 has three tiers (+1/+2/+3), totalling 108 codes.
+
+**Note (Fichman feedback, 2026-02-18):**
+Tier weights were established via trial-and-error without statistical validation (Tim Haynes at 1/27 kickoff meeting).
+
+We use these tiers for for Track B comparison rather than primary predictors.
+
+### 3a. Define VacancyGuide Code Lists
+
+```{r vacancyguide-codes}
+# Level 1: +1 Point — Minor deterioration and general maintenance
+guide_level1 <- c(
+  "PM15-304.10", "PM15-304.11", "PM15-304.19", "PM15-304.19O",
+  "PM15-304.2",  "PM15-304.8",  "PM15-308.1",  "PM15-309.1",
+  "PM15-309.3",  "PM15-309.4",  "PM-302.2/1",  "PM-302.2/2",
+  "PM-302.3/1",  "PM-302.4/6",  "PM-302.4/7",  "PM-304.1/1",
+  "PM-304.6/1",  "PM-304.8/1",  "PM-304.8/15", "PM-304.8/16",
+  "PM-304.8/17", "PM-304.8/18", "PM-304.8/19", "PM-304.8/2",
+  "PM-304.8/20", "PM-304.8/21"
+)
+
+# Level 2: +2 Points — Moderate structural damage
+guide_level2 <- c(
+  "PM15-110.7",  "PM15-302.1",  "PM15-302.4",  "PM15-302.5",
+  "PM15-304.13", "PM15-304.15", "PM15-304.16", "PM15-304.4",
+  "PM15-304.5",  "PM15-304.6",  "PM15-304.7",  "PM-304.2/1",
+  "PM-304.3/1",  "PM-304.3/2",  "PM-304.3/3",  "PM-304.3/4",
+  "PM-304.3/5",  "PM-304.5/2",  "PM-304.5/3"
+)
+
+# Level 3: +3 Points — Severe: Vacant/Unsafe/Collapse
+guide_level3 <- c(
+  "9-3905",       "CP-103",       "PM-102.4/2",   "PM-102.4/4",
+  "PM15-108.1",   "PM15-108.2",   "PM15-109.1",   "PM15-110.1",
+  "PM15-301",     "PM15-304.1",   "PM15-304.19V", "PM15-304.1A",
+  "PM15-304.1B",  "PM15-304.1C",  "PM15-304.1D",  "PM15-304.1E",
+  "PM15-304.1F",  "PM15-304.1G",  "PM15-304.1H",  "PM15-304.1I",
+  "PM15-304.1J",  "PM15-901.1",   "PM15-901.2",   "PM15-902.1",
+  "PM-304.4/1",   "PM-306.0/1",   "PM-306.0/90",  "PM-306.2/1",
+  "PM-306.2/4",   "PM-306.2/90",  "PM-306.2/91",  "PM-306.2/92",
+  "PM-307.1/1",   "PM-307.1/11",  "PM-307.1/12",  "PM-307.1/13",
+  "PM-307.1/19",  "PM-307.1/2",   "PM-307.1/3",   "PM-307.1/4",
+  "PM-307.1/5",   "PM-307.1/6",   "PM-307.1/7",   "PM-307.1/8",
+  "PM-307.1/9",   "PM-307.1/90",  "PM-307.2/1",   "PM-307.3/1",
+  "PM-307.3/2",   "PM-307.3/90",  "PM-307.3/91",  "PM-308.1/1",
+  "PM-308.1/10",  "PM-308.1/11",  "PM-308.1/12",  "PM-308.1/2",
+  "PM-308.1/3",   "PM-308.1/4",   "PM-308.1/5",   "PM-308.1/6",
+  "PM-308.1/7",   "PM-308.1/8",   "PM-308.1/9"
+)
+
+# Vacant Land Codes (For reference only; building model does not use these)
+guide_land <- c(
+  "CP-102", "PM-102.4/1", "PM-102.4/3", "PM-302.2/4",
+  "PM-304.9/2", "PM-304.9/3", "PM-304.9/4", "PM-306.0/2", "PM-306.0/91"
+)
+
+building_all <- c(guide_level1, guide_level2, guide_level3)
+
+cat("Level 1 (+1 pt):", length(guide_level1), "codes\n")
+cat("Level 2 (+2 pts):", length(guide_level2), "codes\n")
+cat("Level 3 (+3 pts):", length(guide_level3), "codes\n")
+cat("Building Model Total: ", length(building_all), "codes\n")
+cat("Land Model:     ", length(guide_land),   "codes\n")
+
+# Duplicate verification
+stopifnot("Duplicate codes found across building tiers!" =
+          length(building_all) == length(unique(building_all)))
+cat("No duplicate codes between building tiers\n")
+```
+
+### 3b. Construct Full Tier Mapping Table
+
+```{r complete-mapping}
+building_tier_map <- bind_rows(
+  tibble(code = guide_level1, guide_tier = "Level 1", guide_weight = 1L),
+  tibble(code = guide_level2, guide_tier = "Level 2", guide_weight = 2L),
+  tibble(code = guide_level3, guide_tier = "Level 3", guide_weight = 3L)
+) %>%
+  mutate(in_ovs_def = code %in% ovs_viol_codes)
+
+# Append titles if violation_def exists
+if (!is.null(violation_def)) {
+  building_tier_map <- building_tier_map %>%
+    left_join(violation_def %>% select(violation_code, violation_code_title),
+              by = c("code" = "violation_code"))
+}
+
+building_tier_map %>%
+  count(guide_tier, guide_weight) %>%
+  kable(caption = "VacancyGuide Building Violation Tier Summary") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+### 3c. Validation: Tier Code Frequency in Real Data
+
+```{r validate-tiers}
+building_viol_counts <- violations %>%
+  filter(violationcode %in% building_all,
+         tolower(violationstatus) == "open") %>%
+  count(violationcode, name = "n_open") %>%
+  right_join(building_tier_map %>% select(code, guide_tier, guide_weight),
+             by = c("violationcode" = "code")) %>%
+  replace_na(list(n_open = 0)) %>%
+  arrange(guide_weight, desc(n_open))
+
+building_viol_counts %>%
+  group_by(guide_tier) %>%
+  summarise(
+    codes_with_data = sum(n_open > 0),
+    total_codes     = n(),
+    total_open      = sum(n_open),
+    .groups = "drop"
+  ) %>%
+  kable(col.names = c("Tier","Codes w/ Data", "Total Codes", "Total OPEN Violations"),
+        caption = "OPEN Violation Counts per Tier in Current Data") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+### 3d. 54 Vacancy Keyword Codes (Track A)
+
+```{r vacancy-keyword-codes}
+# Screen for codes where title or definition contains "vacant"
+if (!is.null(violation_def)) {
+  vacancy_keyword_codes <- violation_def %>%
+    filter(str_detect(tolower(violation_code_title), "vacant") |
+           str_detect(tolower(violation_definition),  "vacant")) %>%
+    pull(violation_code)
+  cat("Vacancy keyword codes found:", length(vacancy_keyword_codes), "\n")
+} else {
+  # fallback: use known vacancy codes from Level 3
+  vacancy_keyword_codes <- c(
+    ovs_viol_codes,
+    "PM15-108.1", "PM15-108.2", "PM15-109.1", "PM15-110.1",
+    "PM15-304.1",  "PM15-304.19V", "PM15-901.1", "PM15-901.2",
+    "PM15-902.1",  "PM-306.0/1",   "PM-306.2/1", "PM-307.1/1",
+    "PM-307.2/1",  "PM-307.3/1"
+  ) %>% unique()
+  cat("Using fallback vacancy codes, count:", length(vacancy_keyword_codes), "\n")
+}
+
+# Maintenance codes (Level 1+2 excluding vacancy keywords)
+maintenance_codes <- building_tier_map %>%
+  filter(guide_weight %in% c(1, 2)) %>%
+  pull(code)
+
+# Structural codes (Level 3)
+structural_codes <- building_tier_map %>%
+  filter(guide_weight == 3) %>%
+  pull(code)
+```
+
+---
+
+## 4. EDA — Key Variable Exploration
+
+### 4a. Exterior Condition & Vacancy Rate
+
+> Exterior condition is an ordered categorical variable (1–7); we use a bar
+> chart to show the vacancy rate at each level.
+> (Fichman feedback: violin plots are not appropriate for ordered categorical variables.)
+
+```{r eda-exterior, fig.width=7, fig.height=4}
+p_ext <- ovs_df %>%
+  st_drop_geometry() %>%
+  filter(!is.na(exterior_condition)) %>%
+  mutate(exterior_condition = factor(as.integer(exterior_condition))) %>%
+  group_by(exterior_condition) %>%
+  summarise(n = n(), n_vacant = sum(ovs == 1),
+            vac_rate = mean(ovs == 1), .groups = "drop") %>%
+  ggplot(aes(x = exterior_condition, y = vac_rate, fill = exterior_condition)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = percent(vac_rate, 0.1)), vjust = -0.4, size = 3.5) +
+  scale_y_continuous(labels = percent_format()) +
+  scale_fill_brewer(palette = "OrRd") +
+  labs(title    = "Vacancy Rate by Exterior Condition Rating",
+       subtitle = "1 = New/Excellent → 7 = Collapsed/Deteriorated",
+       x = "Exterior Condition (1–7)", y = "OVS=1 Rate") +
+  theme_minimal()
+
+p_ext
+ggsave(paste0(graph_path, "exterior_condition_vacancy_rate.png"),
+       plot = p_ext, width = 8, height = 5, dpi = 300)
+```
+
+### 4b. OVS=1 Analysis in New Construction
+
+> Fichman feedback: why are new-construction (post-2010) properties showing up as OVS=1?
+
+```{r eda-new-vacant}
+new_vacant <- ovs_df %>%
+  st_drop_geometry() %>%
+  filter(!is.na(year_built), as.integer(year_built) >= 2010, ovs == 1)
+
+cat("Parcels built after 2010 with OVS=1:", nrow(new_vacant), "\n\n")
+
+bind_rows(
+  new_vacant %>%
+    summarise(group = "New Construction (2010+) & Vacant",
+              pct_clean_seal = mean(ovs_clean_seal == 1),
+              pct_violation  = mean(ovs_violation  == 1),
+              pct_license    = mean(ovs_license    == 1)),
+  ovs_df %>% st_drop_geometry() %>% filter(ovs == 1) %>%
+    summarise(group = "All OVS=1 (Baseline)",
+              pct_clean_seal = mean(ovs_clean_seal == 1),
+              pct_violation  = mean(ovs_violation  == 1),
+              pct_license    = mean(ovs_license    == 1))
+) %>%
+  mutate(across(where(is.numeric), ~percent(.x, 0.1))) %>%
+  kable(col.names = c("Group", "Clean & Seal %", "Violation %", "License %"),
+        caption = "New Vacant vs. All Vacant: OVS Source Composition") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+### 4c. Violation History vs. Vacancy (Fichman: faceted plot)
+
+> Fichman feedback: plot the mean violation count over different historical
+> time windows, grouped by OVS=1/0. This is the core EDA for validating that
+> life-history features are meaningful.
+
+```{r eda-violations-faceted, fig.width=10, fig.height=6}
+# Violation counts in different windows (all codes included for frequency analysis)
+viol_for_eda <- violations %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(
+    violationdate = as.Date(violationdate),
+    is_pre        = !is.na(violationdate) & violationdate < TRAIN_CUTOFF,
+    is_5yr        = !is.na(violationdate) &
+                      violationdate >= (TRAIN_CUTOFF - lubridate::years(5)) &
+                      violationdate < TRAIN_CUTOFF,
+    is_3yr        = !is.na(violationdate) &
+                      violationdate >= (TRAIN_CUTOFF - lubridate::years(3)) &
+                      violationdate < TRAIN_CUTOFF,
+    is_recent     = !is.na(violationdate) &
+                      violationdate >= RECENT_WINDOW & violationdate < TRAIN_CUTOFF
+  ) %>%
+  filter(is_pre) %>%
+  group_by(opa_account_num) %>%
+  summarise(
+    n_viol_total  = n(),
+    n_viol_5yr    = sum(is_5yr),
+    n_viol_3yr    = sum(is_3yr),
+    n_viol_recent = sum(is_recent),
+    .groups = "drop"
+  )
+
+viol_eda_df <- ovs_df %>%
+  st_drop_geometry() %>%
+  select(parcel_number, ovs) %>%
+  left_join(viol_for_eda, by = c("parcel_number" = "opa_account_num")) %>%
+  mutate(
+    across(starts_with("n_viol_"), ~replace_na(.x, 0)),
+    ovs_label = if_else(ovs == 1, "OVS=1 (Vacant)", "OVS=0 (Occupied)")
+  )
+
+# Compute group means and pivot to long format
+viol_means <- viol_eda_df %>%
+  group_by(ovs_label) %>%
+  summarise(
+    `All Time`      = mean(n_viol_total),
+    `Last 5 Years`  = mean(n_viol_5yr),
+    `Last 3 Years`  = mean(n_viol_3yr),
+    `Last 6 Months` = mean(n_viol_recent),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(-ovs_label, names_to = "window", values_to = "mean_violations") %>%
+  mutate(window = factor(window,
+                         levels = c("All Time", "Last 5 Years",
+                                    "Last 3 Years", "Last 6 Months")))
+
+p_viol_facet <- viol_means %>%
+  ggplot(aes(x = ovs_label, y = mean_violations, fill = ovs_label)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = round(mean_violations, 2)),
+            vjust = -0.4, size = 3.5) +
+  facet_wrap(~window, scales = "free_y") +
+  scale_fill_manual(values = c("OVS=0 (Occupied)" = "steelblue",
+                                "OVS=1 (Vacant)"  = "tomato")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  labs(title    = "Mean Number of Violations by Vacancy Status",
+       subtitle = "Across different time windows | properties with no violations counted as 0",
+       x = NULL, y = "Mean Violations per Parcel") +
+  theme_minimal(base_size = 12) +
+  theme(strip.text = element_text(face = "bold"))
+
+p_viol_facet
+ggsave(paste0(graph_path, "violations_faceted_by_ovs.png"),
+       plot = p_viol_facet, width = 10, height = 6, dpi = 300)
+```
+
+---
+
+## 5. Baseline Model (OPA Fields Only)
+
+The baseline uses only the OPA fields already on `ovs_df` — no extra joins.
+This is the floor for model performance; the engineered model in Section 7
+must beat this AUC.
+
+| Included | Rationale |
+|----------|-----------|
+| `exterior_condition` | Physical state directly observed by an assessor |
+| `log(market_value)` | Economic disinvestment signal; log normalizes right skew |
+| `building_age` | Derived from `year_built` |
+| `log(total_livable_area)` | Proxy for building floor area |
+
+### 5a. Prepare Dataset
+
+```{r baseline-prep}
+baseline_df <- ovs_df %>%
+  st_drop_geometry() %>%
+  filter(market_value > 0, total_livable_area > 0, !is.na(exterior_condition)) %>%
+  mutate(
+    exterior_condition = as.numeric(exterior_condition),
+    building_age       = 2024L - as.integer(year_built),
+    building_age       = if_else(building_age < 0 | building_age > 200,
+                                 NA_integer_, building_age),
+    log_market_value   = log(market_value),
+    log_livable_area   = log(total_livable_area)
+  ) %>%
+  filter(!is.na(building_age))
+
+cat("Baseline dataset:", comma(nrow(baseline_df)), "parcels\n")
+cat("OVS=1:", comma(sum(baseline_df$ovs == 1)),
+    "(", percent(mean(baseline_df$ovs), 0.1), ")\n")
+```
+
+### 5b. Fit model
+
+```{r baseline-model}
+baseline_model <- glm(
+  ovs ~ exterior_condition + log_market_value + building_age + log_livable_area,
+  data = baseline_df, family = binomial()
+)
+summary(baseline_model)
+```
+
+### 5c. Fit Statistics & Odds Ratios
+
+```{r baseline-fit}
+null_dev    <- baseline_model$null.deviance
+resid_dev   <- baseline_model$deviance
+
+tibble(
+  Metric = c("McFadden R²", "AUC (training set)", "AIC", "N"),
+  Value  = c(round(1 - resid_dev/null_dev, 3),
+             "— (see ROC below)",
+             round(AIC(baseline_model), 1),
+             comma(nobs(baseline_model)))
+) %>%
+  kable(caption = "Baseline fit statistics") %>%
+  kable_styling(full_width = FALSE)
+
+tidy(baseline_model, exponentiate = TRUE, conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  mutate(across(c(estimate, conf.low, conf.high), ~round(.x, 3)),
+         p.value = format.pval(p.value, digits = 3)) %>%
+  kable(caption = "Baseline Odds Ratios") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+### 5d. Threshold & Probability Distribution
+
+> Fichman feedback: use a predicted-probability density plot instead of discussing a single threshold number.
+
+```{r baseline-threshold}
+pred_probs_baseline <- predict(baseline_model, type = "response")
+actual_baseline     <- baseline_df$ovs
+
+roc_baseline  <- roc(actual_baseline, pred_probs_baseline, quiet = TRUE)
+best_baseline <- coords(roc_baseline, "best", best.method = "youden",
+                        ret = c("threshold", "sensitivity", "specificity"))
+
+cat("Baseline AUC:       ", round(auc(roc_baseline), 3), "\n")
+cat("Youden optimal threshold:", round(best_baseline$threshold, 3), "\n")
+cat("Sensitivity:        ", round(best_baseline$sensitivity, 3), "\n")
+cat("Specificity:        ", round(best_baseline$specificity, 3), "\n")
+```
+
+```{r baseline-prob-dist, fig.width=8, fig.height=5}
+p_prob_baseline <- tibble(
+  prob  = pred_probs_baseline,
+  label = factor(actual_baseline, levels = c(0,1),
+                 labels = c("OVS=0 (Occupied)", "OVS=1 (Vacant)"))
+) %>%
+  ggplot(aes(x = prob, fill = label)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = best_baseline$threshold,
+             linetype = "dashed", color = "black", linewidth = 0.8) +
+  annotate("text", x = best_baseline$threshold + 0.005, y = Inf,
+           label = paste0("Youden = ", round(best_baseline$threshold, 3)),
+           vjust = 2, hjust = 0, size = 3.5) +
+  scale_fill_manual(values = c("steelblue", "tomato")) +
+  scale_x_continuous(labels = percent_format()) +
+  labs(title    = "Baseline: Predicted Probability Distribution by True OVS",
+       subtitle = paste0("AUC = ", round(auc(roc_baseline), 3),
+                         " | high overlap = poor separation; clear separation = good"),
+       x = "Predicted P(Vacant)", y = "Density", fill = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+p_prob_baseline
+ggsave(paste0(graph_path, "baseline_prob_distribution.png"),
+       plot = p_prob_baseline, width = 9, height = 5, dpi = 300)
+```
+
+```{r baseline-roc, fig.width=6, fig.height=5}
+ggroc(roc_baseline, color = "steelblue", linewidth = 1) +
+  geom_abline(slope = 1, intercept = 1, linetype = "dashed", color = "gray50") +
+  annotate("point", x = best_baseline$specificity,
+           y = best_baseline$sensitivity, color = "tomato", size = 4) +
+  labs(title    = "ROC Curve — Baseline Model",
+       subtitle = paste0("AUC = ", round(auc(roc_baseline), 3)),
+       x = "Specificity", y = "Sensitivity") +
+  theme_minimal()
+```
+
+```{r baseline-cm}
+pred_class_baseline <- if_else(pred_probs_baseline >= best_baseline$threshold, 1L, 0L)
+cm_b <- table(Predicted = pred_class_baseline, Actual = actual_baseline)
+print(cm_b)
+cat("Sensitivity:", round(cm_b[2,2]/(cm_b[1,2]+cm_b[2,2]), 3), "\n")
+cat("Specificity:", round(cm_b[1,1]/(cm_b[1,1]+cm_b[2,1]), 3), "\n")
+cat("Precision:  ", round(cm_b[2,2]/(cm_b[2,1]+cm_b[2,2]), 3), "\n")
+```
+
+> **Baseline:** the engineered model must beat AUC = `r round(auc(roc_baseline), 3)`.
+
+---
+
+## 6. Feature Engineering
+
+### Design principles
+
+VacancyGuide tier weights were set by trial-and-error with no statistical
+validation:
+- **Track A (primary):** use raw violation features and let the model learn
+  which patterns actually predict OVS.
+- **Track B (comparison):** keep the tier features; the univariate analysis
+  in Section 9 decides what to keep or drop.
+
+All features are filtered with `< TRAIN_CUTOFF` to strictly avoid temporal leakage.
+
+### 6a. Violation Features (Track A)
+
+```{r feat-violations}
+viol_clean <- violations %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(
+    violationdate  = as.Date(violationdate),
+    is_open        = as.integer(tolower(violationstatus) == "open"),
+    is_ovs_code    = violationcode %in% ovs_viol_codes,
+    is_pre         = !is.na(violationdate) & violationdate < TRAIN_CUTOFF,
+    is_recent      = !is.na(violationdate) &
+                       violationdate >= RECENT_WINDOW & violationdate < TRAIN_CUTOFF,
+    is_3yr         = !is.na(violationdate) &
+                       violationdate >= (TRAIN_CUTOFF - lubridate::years(3)) &
+                       violationdate < TRAIN_CUTOFF,
+    is_5yr         = !is.na(violationdate) &
+                       violationdate >= (TRAIN_CUTOFF - lubridate::years(5)) &
+                       violationdate < TRAIN_CUTOFF,
+    is_vacancy_kw  = violationcode %in% vacancy_keyword_codes,
+    is_maintenance = violationcode %in% maintenance_codes,
+    is_structural  = violationcode %in% structural_codes,
+    is_fire_safety = str_detect(tolower(violationcodetitle),
+                                "fire|smoke|sprinkler|egress|emergency|hazard")
+  ) %>%
+  filter(is_pre, !is_ovs_code)
+
+viol_features <- viol_clean %>%
+  group_by(opa_account_num) %>%
+  summarise(
+    n_violations_total    = n(),
+    n_violations_recent   = sum(is_recent),
+    n_violations_3yr      = sum(is_3yr),       # Fichman: life history — last 3 years
+    n_violations_5yr      = sum(is_5yr),       # Fichman: life history — last 5 years
+    n_violations_open     = sum(is_open),
+    n_distinct_codes      = n_distinct(violationcode),
+    has_open_violation    = as.integer(any(is_open == 1L)),
+    days_since_last_viol  = as.integer(TRAIN_CUTOFF - max(violationdate, na.rm = TRUE)),
+    days_oldest_open_viol = as.integer(
+      TRAIN_CUTOFF - min(violationdate[is_open == 1L], na.rm = TRUE)),
+    has_vacancy_kw_code   = as.integer(any(is_vacancy_kw)),
+    has_maintenance_code  = as.integer(any(is_maintenance)),
+    has_structural_code   = as.integer(any(is_structural)),
+    has_fire_safety_code  = as.integer(any(is_fire_safety)),
+    has_open_vacancy_kw   = as.integer(any(is_open == 1L & is_vacancy_kw)),
+    has_open_structural   = as.integer(any(is_open == 1L & is_structural)),
+    .groups = "drop"
+  ) %>%
+  mutate(days_oldest_open_viol = if_else(
+    is.infinite(days_oldest_open_viol), NA_integer_, days_oldest_open_viol))
+
+cat("Violation features:", comma(nrow(viol_features)), "parcels\n")
+```
+
+### 6b. License Features
+
+```{r feat-licenses}
+lic_clean <- licenses %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(
+    initialissuedate = as.Date(initialissuedate),
+    is_active        = tolower(licensestatus) == "active",
+    is_vacancy_lic   = revenuecode %in% c("3219", "3634"),
+    is_rental_lic    = revenuecode == "3202",
+    is_pre           = !is.na(initialissuedate) & initialissuedate < TRAIN_CUTOFF
+  ) %>%
+  filter(is_pre)
+
+license_features <- lic_clean %>%
+  group_by(opa_account_num) %>%
+  summarise(
+    had_vacancy_license = as.integer(any(is_vacancy_lic)),
+    n_vacancy_licenses  = sum(is_vacancy_lic),
+    has_rental_license  = as.integer(any(is_active & is_rental_lic)),
+    n_licenses_total    = n(),
+    license_lapse_rate  = sum(!is_active) / n(),
+    days_since_last_lic = as.integer(TRAIN_CUTOFF - max(initialissuedate, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+cat("License features:", comma(nrow(license_features)), "parcels\n")
+```
+
+### 6c. Unsafe & Imminently Dangerous Features
+
+```{r feat-unsafe}
+unsafe_features <- unsafe %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(violationdate = as.Date(violationdate)) %>%
+  filter(!is.na(violationdate), violationdate < TRAIN_CUTOFF) %>%
+  group_by(opa_account_num) %>%
+  summarise(has_unsafe = 1L, n_unsafe = n(),
+            days_since_unsafe = as.integer(TRAIN_CUTOFF - max(violationdate, na.rm = TRUE)),
+            .groups = "drop")
+
+imd_features <- imm_dang %>%
+  filter(!is.na(opa_account_num)) %>%
+  mutate(violationdate = as.Date(violationdate)) %>%
+  filter(!is.na(violationdate), violationdate < TRAIN_CUTOFF) %>%
+  group_by(opa_account_num) %>%
+  summarise(has_imd = 1L, n_imd = n(),
+            days_since_imd = as.integer(TRAIN_CUTOFF - max(violationdate, na.rm = TRUE)),
+            .groups = "drop")
+
+cat("Unsafe:", comma(nrow(unsafe_features)), "| IMD:", comma(nrow(imd_features)), "\n")
+```
+
+### 6d. OPA-derived Features
+
+```{r feat-opa}
+opa_features <- ovs_df %>%
+  st_drop_geometry() %>%
+  mutate(
+    exterior_condition = as.numeric(exterior_condition),
+    building_age       = 2024L - as.integer(year_built),
+    building_age       = if_else(building_age < 0 | building_age > 200,
+                                 NA_integer_, building_age),
+    log_market_value   = log1p(market_value),
+    log_livable_area   = log1p(total_livable_area),
+    log_sale_price     = log1p(sale_price),
+    days_since_sale    = as.integer(TRAIN_CUTOFF - as.Date(sale_date)),
+    days_since_sale    = if_else(days_since_sale < 0, NA_integer_, days_since_sale),
+    years_since_sale   = days_since_sale / 365.25,  # Fichman: life history — years since last sale
+    is_poor_condition  = as.integer(exterior_condition >= 5),
+    value_per_sqft     = if_else(total_livable_area > 0,
+                                 market_value / total_livable_area, NA_real_)
+  ) %>%
+  select(parcel_number, exterior_condition, building_age,
+         log_market_value, log_livable_area, log_sale_price,
+         days_since_sale, years_since_sale, is_poor_condition, value_per_sqft,
+         zoning, zip_code, census_tract,
+         ovs, ovs_clean_seal, ovs_violation, ovs_license)
+```
+
+---
+
+## 7. Assemble the full feature dataset
+
+```{r assemble}
+features_df <- opa_features %>%
+  left_join(viol_features,    by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(license_features, by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(unsafe_features,  by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(imd_features,     by = c("parcel_number" = "opa_account_num")) %>%
+  mutate(
+    across(c(n_violations_total, n_violations_recent, n_violations_3yr, n_violations_5yr,
+             n_violations_open, n_distinct_codes, has_open_violation,
+             has_vacancy_kw_code, has_maintenance_code, has_structural_code,
+             has_fire_safety_code, has_open_vacancy_kw, has_open_structural,
+             n_licenses_total, had_vacancy_license, n_vacancy_licenses,
+             has_rental_license, has_unsafe, n_unsafe, has_imd, n_imd),
+           ~replace_na(.x, 0L)),
+    license_lapse_rate = replace_na(license_lapse_rate, 0)
+  )
+
+cat("Feature dataset:", comma(nrow(features_df)), "rows x", ncol(features_df), "columns\n")
+cat("OVS=1:", comma(sum(features_df$ovs==1, na.rm=TRUE)),
+    "(", percent(mean(features_df$ovs, na.rm=TRUE), 0.1), ")\n")
+```
+
+---
+
+## 8. Missing-value audit
+
+```{r missing-audit}
+features_df %>%
+  select(-parcel_number, -zip_code, -census_tract, -zoning, -starts_with("ovs_")) %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "feature", values_to = "n_missing") %>%
+  mutate(
+    pct_missing = n_missing / nrow(features_df),
+    flag = case_when(pct_missing == 0   ~ "Complete",
+                     pct_missing < 0.05 ~ "< 5%",
+                     pct_missing < 0.20 ~ "5–20%",
+                     TRUE               ~ "> 20%")
+  ) %>%
+  filter(pct_missing > 0) %>%
+  arrange(desc(pct_missing)) %>%
+  mutate(pct_missing = percent(pct_missing, 0.1)) %>%
+  kable(col.names = c("Feature", "N Missing", "% Missing", "Flag"),
+        caption = "Missing-value audit") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+---
+
+## 9. Univariate correlation screen
+
+```{r univariate-corr, fig.width=10, fig.height=6}
+corr_df <- features_df %>%
+  select(ovs, where(is.numeric), -starts_with("ovs_")) %>%
+  summarise(across(-ovs, ~cor(.x, ovs, use = "complete.obs"))) %>%
+  pivot_longer(everything(), names_to = "feature", values_to = "r") %>%
+  mutate(abs_r     = abs(r),
+         direction = if_else(r > 0, "Positive (→ vacant)", "Negative (→ occupied)")) %>%
+  arrange(desc(abs_r)) %>%
+  head(20)
+
+p_corr <- corr_df %>%
+  ggplot(aes(x = reorder(feature, abs_r), y = r, fill = direction)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("Positive (→ vacant)"   = "tomato",
+                                "Negative (→ occupied)" = "steelblue")) +
+  labs(title = "Top 20 Features: Correlation with OVS", x = NULL, y = "Pearson r",
+       fill = NULL) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+p_corr
+ggsave(paste0(graph_path, "univariate_correlation.png"),
+       plot = p_corr, width = 10, height = 6, dpi = 300)
+
+corr_df %>% mutate(r = round(r, 3)) %>% select(feature, r, direction) %>%
+  kable(caption = "Top 20 feature-vs-OVS correlations") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+---
+
+## 10. Engineered Model: random vs temporal split
+
+### 10a. Modeling data frame
+
+```{r model-df}
+model_df <- features_df %>%
+  filter(!is.na(exterior_condition), !is.na(building_age),
+         !is.na(log_market_value),   !is.na(value_per_sqft)) %>%
+  mutate(
+    days_since_last_viol  = replace_na(days_since_last_viol,
+                              as.integer(TRAIN_CUTOFF - as.Date("2000-01-01"))),
+    days_oldest_open_viol = replace_na(days_oldest_open_viol, 0L)
+  )
+
+cat("Modeling dataset:", comma(nrow(model_df)), "parcels |",
+    "OVS=1:", percent(mean(model_df$ovs), 0.1), "\n")
+```
+
+### 10b. Temporal split assignment
+
+```{r temporal-assign}
+latest_viol <- violations %>%
+  filter(!is.na(opa_account_num), !is.na(violationdate)) %>%
+  mutate(violationdate = as.Date(violationdate)) %>%
+  group_by(opa_account_num) %>%
+  summarise(latest_viol = max(violationdate, na.rm = TRUE), .groups = "drop")
+
+latest_lic <- licenses %>%
+  filter(!is.na(opa_account_num), !is.na(initialissuedate)) %>%
+  mutate(initialissuedate = as.Date(initialissuedate)) %>%
+  group_by(opa_account_num) %>%
+  summarise(latest_lic = max(initialissuedate, na.rm = TRUE), .groups = "drop")
+
+model_df <- model_df %>%
+  left_join(latest_viol, by = c("parcel_number" = "opa_account_num")) %>%
+  left_join(latest_lic,  by = c("parcel_number" = "opa_account_num")) %>%
+  mutate(
+    latest_activity = pmax(latest_viol, latest_lic, na.rm = TRUE),
+    temporal_split  = case_when(
+      is.na(latest_activity)                                    ~ "train",
+      as.numeric(latest_activity) <= quantile(as.numeric(latest_activity), 0.70, na.rm=TRUE) ~ "train",
+      TRUE                                                       ~ "test"
+    )
+  )
+
+model_df %>% count(temporal_split) %>% mutate(pct = percent(n/sum(n), 0.1)) %>%
+  kable() %>% kable_styling(full_width = FALSE)
+```
+
+### 10c. Model formula
+
+```{r formula}
+model_formula <- ovs ~
+  n_violations_total + n_violations_recent + n_violations_open + n_distinct_codes +
+  days_since_last_viol + days_oldest_open_viol +
+  has_vacancy_kw_code + has_maintenance_code + has_structural_code +
+  has_fire_safety_code + has_open_structural +
+  had_vacancy_license + has_rental_license + license_lapse_rate +
+  exterior_condition + building_age + has_unsafe + has_imd +
+  log_market_value + value_per_sqft
+```
+
+### 10d. Split A — random 70/30
+
+```{r random-split}
+set.seed(42)
+idx          <- sample(nrow(model_df), floor(0.7 * nrow(model_df)))
+train_random <- model_df[idx, ]
+test_random  <- model_df[-idx, ]
+
+model_random  <- glm(model_formula, data = train_random, family = binomial())
+prob_random   <- predict(model_random, newdata = test_random, type = "response")
+roc_random    <- roc(test_random$ovs, prob_random, quiet = TRUE)
+thresh_random <- coords(roc_random, "best", best.method = "youden",
+                        ret = c("threshold", "sensitivity", "specificity"))
+
+cat("Random split — AUC:", round(auc(roc_random), 3),
+    "| Sens:", round(thresh_random$sensitivity, 3),
+    "| Spec:", round(thresh_random$specificity, 3), "\n")
+```
+
+### 10e. Split B — temporal 70/30
+
+```{r temporal-model}
+train_temporal <- model_df %>% filter(temporal_split == "train")
+test_temporal  <- model_df %>% filter(temporal_split == "test")
+
+model_temporal  <- glm(model_formula, data = train_temporal, family = binomial())
+prob_temporal   <- predict(model_temporal, newdata = test_temporal, type = "response")
+roc_temporal    <- roc(test_temporal$ovs, prob_temporal, quiet = TRUE)
+thresh_temporal <- coords(roc_temporal, "best", best.method = "youden",
+                          ret = c("threshold", "sensitivity", "specificity"))
+
+cat("Temporal split — AUC:", round(auc(roc_temporal), 3),
+    "| Sens:", round(thresh_temporal$sensitivity, 3),
+    "| Spec:", round(thresh_temporal$specificity, 3), "\n")
+```
+
+### 10f. Comparison table + probability distribution plot
+
+```{r split-comparison}
+tibble(
+  Split       = c("Random 70/30", "Temporal 70/30"),
+  AUC         = c(round(auc(roc_random), 3),    round(auc(roc_temporal), 3)),
+  Sensitivity = c(round(thresh_random$sensitivity, 3),  round(thresh_temporal$sensitivity, 3)),
+  Specificity = c(round(thresh_random$specificity, 3),  round(thresh_temporal$specificity, 3)),
+  Threshold   = c(round(thresh_random$threshold, 3),    round(thresh_temporal$threshold, 3))
+) %>%
+  kable(caption = "Random vs temporal split | AUC gap < 0.03 = stable across time") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+```{r engineered-prob-dist, fig.width=8, fig.height=5}
+p_prob_eng <- tibble(
+  prob  = prob_random,
+  label = factor(test_random$ovs, levels=c(0,1),
+                 labels=c("OVS=0 (Occupied)", "OVS=1 (Vacant)"))
+) %>%
+  ggplot(aes(x = prob, fill = label)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = thresh_random$threshold,
+             linetype = "dashed", color = "black", linewidth = 0.8) +
+  annotate("text", x = thresh_random$threshold + 0.005, y = Inf,
+           label = paste0("Youden = ", round(thresh_random$threshold, 3)),
+           vjust = 2, hjust = 0, size = 3.5) +
+  scale_fill_manual(values = c("steelblue", "tomato")) +
+  scale_x_continuous(labels = percent_format()) +
+  labs(title    = "Engineered Model: Predicted Probability Distribution by True OVS",
+       subtitle = paste0("AUC = ", round(auc(roc_random), 3),
+                         " (Random) | Baseline AUC = ",
+                         round(auc(roc_baseline), 3)),
+       x = "Predicted P(Vacant)", y = "Density", fill = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+p_prob_eng
+ggsave(paste0(graph_path, "engineered_prob_distribution.png"),
+       plot = p_prob_eng, width = 9, height = 5, dpi = 300)
+```
+
+```{r roc-compare, fig.width=7, fig.height=5}
+ggroc(list(`Random 70/30` = roc_random, `Temporal 70/30` = roc_temporal),
+      linewidth = 1) +
+  scale_color_manual(values = c("Random 70/30" = "steelblue",
+                                 "Temporal 70/30" = "tomato")) +
+  geom_abline(slope=1, intercept=1, linetype="dashed", color="gray50") +
+  annotate("text", x=0.3, y=0.15,
+           label = paste0("Random AUC = ",    round(auc(roc_random), 3),
+                          "\nTemporal AUC = ", round(auc(roc_temporal), 3)),
+           size=4, hjust=0) +
+  labs(title = "ROC Curves: Random vs. Temporal Split",
+       x = "Specificity", y = "Sensitivity", color = NULL) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+---
+
+## 11. Export
+
+```{r export}
+features_df %>%
+  write_csv(paste0(out_path, "features_residential.csv"))
+
+building_tier_map %>%
+  write_csv(paste0(out_path, "building_tier_mapping.csv"))
+
+tibble(code = vacancy_keyword_codes) %>%
+  write_csv(paste0(out_path, "vacancy_keyword_codes.csv"))
+
+cat("Exported:\n")
+cat("  features_residential.csv  —", comma(nrow(features_df)), "rows\n")
+cat("  building_tier_mapping.csv —", nrow(building_tier_map), "rows\n")
+cat("  vacancy_keyword_codes.csv —", length(vacancy_keyword_codes), "rows\n")
+```
+
+---
+

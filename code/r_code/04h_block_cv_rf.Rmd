@@ -1,0 +1,139 @@
+---
+title: "PhillyStat360 — 04h: Block CV by census tract (R port)"
+output: html_document
+---
+
+R port of `code/python/04h_block_cv_rf.ipynb`. Re-runs the production RF with
+`group_vfold_cv` blocked by `census_tract`.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(rsample)
+  library(ranger)
+  library(yardstick)
+})
+
+ROOT       <- here::here()
+DATA_PATH  <- file.path(ROOT, "data")
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+SEED <- 42
+```
+
+## 1. Load training data
+
+```{r load}
+rf_existing <- readRDS(file.path(PY_PATH, "model_rf_final.rds"))
+X_cols <- rf_existing$forest$independent.variable.names
+cat("Features:", length(X_cols), "\n")
+
+feat <- read_csv(file.path(DATA_PATH, "features_residential.csv"),
+                 show_col_types = FALSE) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number))) |>
+  filter(!is.na(ovs), !is.na(census_tract)) |>
+  mutate(census_tract = as.integer(census_tract))
+
+cat("Rows:", nrow(feat),
+    " tracts:", n_distinct(feat$census_tract),
+    " prevalence:", mean(feat$ovs), "\n")
+```
+
+## 2. RF hyperparameters from production fit
+
+```{r rf-params}
+RF_TREES <- rf_existing$num.trees
+RF_MTRY  <- rf_existing$mtry
+RF_MIN_N <- rf_existing$min.node.size
+
+n_neg <- sum(feat$ovs == 0); n_pos <- sum(feat$ovs == 1)
+spw <- n_neg / max(n_pos, 1)
+
+fit_rf_block <- function(train_data) {
+  d <- train_data |>
+    select(all_of(X_cols), ovs) |>
+    mutate(across(where(is.numeric),
+                  \(x) replace_na(x, median(x, na.rm = TRUE))),
+           ovs_factor = factor(ovs, levels = c(0, 1),
+                               labels = c("not_vacant", "vacant"))) |>
+    select(-ovs)
+  ranger(ovs_factor ~ ., data = d,
+         num.trees = RF_TREES, mtry = RF_MTRY, min.node.size = RF_MIN_N,
+         probability = TRUE,
+         class.weights = c(not_vacant = 1, vacant = spw),
+         seed = SEED, num.threads = parallel::detectCores())
+}
+
+predict_rf_block <- function(fit, data) {
+  d <- data |> select(all_of(X_cols)) |>
+    mutate(across(where(is.numeric),
+                  \(x) replace_na(x, median(x, na.rm = TRUE))))
+  predict(fit, data = d)$predictions[, "vacant"]
+}
+```
+
+## 3. Block CV (5 folds by census tract)
+
+```{r block-cv}
+folds <- group_vfold_cv(feat, group = census_tract, v = 5)
+
+fold_results <- map2_dfr(folds$splits, seq_along(folds$splits), \(s, i) {
+  tr <- analysis(s); te <- assessment(s)
+  fit <- fit_rf_block(tr)
+  p <- predict_rf_block(fit, te)
+  auc <- as.numeric(yardstick::roc_auc_vec(
+    factor(te$ovs, levels = c(1, 0)), p, event_level = "first"))
+  cat(sprintf("Fold %d: AUC=%.4f (train=%d, test=%d)\n",
+              i, auc, nrow(tr), nrow(te)))
+  tibble(fold = i,
+         n_train = nrow(tr), n_test = nrow(te),
+         n_train_tracts = n_distinct(tr$census_tract),
+         n_test_tracts  = n_distinct(te$census_tract),
+         pos_test = sum(te$ovs == 1),
+         auc = auc)
+})
+
+cat(sprintf("\nMean AUC: %.4f (sd %.4f)\n",
+            mean(fold_results$auc), sd(fold_results$auc)))
+write_csv(fold_results, file.path(OUT_PATH, "block_cv_rf.csv"))
+```
+
+## 4. Compare to random-split AUC
+
+```{r compare}
+preds <- read_csv(file.path(PY_PATH, "predictions_04b.csv"),
+                  col_select = c("parcel_number", "ovs", "data_split",
+                                 "ensemble_prob"),
+                  show_col_types = FALSE)
+test <- preds |> filter(data_split == "test")
+random_auc <- as.numeric(yardstick::roc_auc_vec(
+  factor(test$ovs, levels = c(1, 0)),
+  test$ensemble_prob, event_level = "first"))
+
+cat(sprintf("Random-split (ensemble): AUC = %.4f\n", random_auc))
+cat(sprintf("Block-CV (RF):           AUC = %.4f ± %.4f\n",
+            mean(fold_results$auc), sd(fold_results$auc)))
+cat(sprintf("Drop: %+.4f\n",
+            random_auc - mean(fold_results$auc)))
+```
+
+```{r plot, fig.width=8, fig.height=5}
+bp <- ggplot(fold_results, aes(factor(fold), auc)) +
+  geom_col(fill = "#1f77b4") +
+  geom_hline(yintercept = random_auc, linetype = "dashed", color = "tomato") +
+  geom_hline(yintercept = mean(fold_results$auc),
+             linetype = "dotted", color = "#1f77b4") +
+  ylim(0, 1) +
+  labs(title = "Block CV by census tract — held-out AUC per fold",
+       x = "Fold", y = "AUC") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "block_cv_rf_aucs.png"), bp,
+       width = 8, height = 5, dpi = 200)
+bp
+```

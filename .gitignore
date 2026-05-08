@@ -1,0 +1,27 @@
+# Editor / OS
+.DS_Store
+Thumbs.db
+desktop.ini
+**/desktop.ini
+.idea/
+
+# Python (only relevant when running tileserver.py locally)
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Local CCD/Claude state
+.claude/
+
+# Local-only artefacts
+uploads/
+preview/
+screenshots/
+
+# Heavy intermediate exports — the .pmtiles files carry the same data and are
+# the right format for the web. The full GeoJSON is ~405 MB and would chew
+# through LFS quota for no benefit.
+vacancy_predictions.geojson
+martin.zip

@@ -1,0 +1,115 @@
+---
+title: "PhillyStat360 — 04g: Temporal validation (R port)"
+output: html_document
+---
+
+R port of `code/python/04g_temporal_validation.ipynb`. Splits parcels by
+violation recency and reports AUC + observed vs predicted vacancy on each
+cohort as a proxy for temporal generalization.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(yardstick)
+})
+
+ROOT       <- here::here()
+DATA_PATH  <- file.path(ROOT, "data")
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+```
+
+## 1. Load predictions + recency
+
+```{r load}
+preds <- read_csv(file.path(PY_PATH, "predictions_04b.csv"),
+                  show_col_types = FALSE) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number)))
+
+feat <- read_csv(file.path(DATA_PATH, "features_residential.csv"),
+                 col_select = c("parcel_number", "days_since_last_viol"),
+                 show_col_types = FALSE) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number)))
+
+df <- preds |> left_join(feat, by = "parcel_number")
+sentinel <- max(df$days_since_last_viol, na.rm = TRUE)
+cat(sprintf("Sentinel (no violations): %.0f days\n", sentinel))
+```
+
+## 2. Define cohorts
+
+```{r cohorts}
+NEW_THRESHOLD <- 520L
+OLD_THRESHOLD <- 1100L
+
+new_cohort <- df |> filter(between(days_since_last_viol, 1, NEW_THRESHOLD))
+old_cohort <- df |> filter(days_since_last_viol > OLD_THRESHOLD |
+                             is.na(days_since_last_viol))
+cat(sprintf("New: %d (%.1f%%) ovs=%.4f%% | Old: %d (%.1f%%) ovs=%.4f%%\n",
+            nrow(new_cohort), 100 * nrow(new_cohort) / nrow(df),
+            100 * mean(new_cohort$ovs),
+            nrow(old_cohort), 100 * nrow(old_cohort) / nrow(df),
+            100 * mean(old_cohort$ovs)))
+```
+
+## 3. Cohort metrics
+
+```{r metrics}
+cohort_metrics <- function(g) {
+  auc <- if (length(unique(g$ovs)) == 2) {
+    as.numeric(yardstick::roc_auc_vec(
+      factor(g$ovs, levels = c(1, 0)), g$ensemble_prob, event_level = "first"))
+  } else NA_real_
+  tibble(
+    n = nrow(g),
+    n_pos = sum(g$ovs == 1),
+    obs_rate = mean(g$ovs == 1),
+    mean_pred = mean(g$ensemble_prob),
+    auc = auc,
+    brier = mean((g$ovs - g$ensemble_prob)^2)
+  )
+}
+
+tab <- bind_rows(
+  cohort_metrics(old_cohort) |> mutate(cohort = "old (train surrogate)"),
+  cohort_metrics(new_cohort) |> mutate(cohort = "new (test surrogate)")
+) |> select(cohort, everything())
+print(tab)
+write_csv(tab, file.path(OUT_PATH, "temporal_validation.csv"))
+```
+
+## 4. Plot
+
+```{r plot, fig.width=13, fig.height=5}
+auc_p <- ggplot(tab, aes(cohort, auc, fill = cohort)) +
+  geom_col() +
+  scale_fill_manual(values = c("old (train surrogate)" = "#999999",
+                               "new (test surrogate)" = "#1f77b4"),
+                    guide = "none") +
+  geom_hline(yintercept = 0.7, linetype = "dashed", color = "tomato") +
+  ylim(0, 1) +
+  labs(title = "AUC by cohort", y = "AUC", x = NULL) +
+  theme_minimal()
+
+rates_p <- tab |>
+  select(cohort, obs_rate, mean_pred) |>
+  pivot_longer(-cohort, names_to = "metric", values_to = "value") |>
+  ggplot(aes(cohort, value, fill = metric)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(obs_rate = "#2166ac", mean_pred = "#d6604d"),
+                    labels = c("Observed", "Predicted")) +
+  labs(title = "Observed vs predicted by cohort", y = "Rate", x = NULL,
+       fill = NULL) +
+  theme_minimal()
+
+combined <- patchwork::wrap_plots(auc_p, rates_p, ncol = 2)
+ggsave(file.path(GRAPH_PATH, "temporal_validation.png"), combined,
+       width = 13, height = 5, dpi = 200)
+combined
+```

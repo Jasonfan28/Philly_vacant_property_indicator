@@ -1,0 +1,325 @@
+---
+title: "PhillyStat360 — 04b: VPI Comparison & Spatial Analysis (R port)"
+output: html_document
+---
+
+R port of `code/python/04b_vpi_comparison.ipynb`. Joins predictions to OPA
+metadata, reports per-ZIP and per-building-type AUC, ward-level summaries,
+and an equity audit by census-tract median household income.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(yardstick)
+})
+
+ROOT       <- here::here()
+RAW_PATH   <- file.path(ROOT, "rawdata")
+DATA_PATH  <- file.path(ROOT, "data")
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+
+stopifnot(file.exists(file.path(PY_PATH, "all_predictions_rf.csv")))
+SEED <- 42
+```
+
+## 1. Load data
+
+```{r load}
+preds <- read_csv(file.path(PY_PATH, "all_predictions_rf.csv"),
+                  show_col_types = FALSE) |>
+  mutate(parcel_number = as.character(parcel_number))
+
+features_full <- read_csv(file.path(DATA_PATH, "features_residential.csv"),
+                          show_col_types = FALSE) |>
+  mutate(parcel_number = as.character(parcel_number))
+features <- features_full |>
+  select(parcel_number, zip_code, census_tract,
+         exterior_condition, building_age)
+
+opa_path <- file.path(RAW_PATH, "opa_properties_public.csv")
+if (!file.exists(opa_path)) opa_path <- file.path(DATA_PATH, "opa_properties_public.csv")
+opa <- read_csv(opa_path, show_col_types = FALSE) |>
+  rename_with(\(x) str_to_lower(str_replace_all(str_trim(x), " ", "_"))) |>
+  mutate(parcel_number = as.character(parcel_number)) |>
+  select(parcel_number, geographic_ward,
+         category_code, category_code_description,
+         building_code_description) |>
+  distinct(parcel_number, .keep_all = TRUE)
+```
+
+## Tier mapping
+
+```{r tier-map}
+TIER_LEVELS <- c("Very Unlikely (0–0.2)", "Unlikely (0.2–0.4)",
+                 "Maybe (0.4–0.6)",       "Likely (0.6–0.8)",
+                 "Very Likely (0.8–1.0)")
+to_tier <- function(p) {
+  cut(p, breaks = c(-Inf, 0.2, 0.4, 0.6, 0.8, Inf),
+      labels = TIER_LEVELS, right = FALSE, include.lowest = TRUE)
+}
+
+prob_col <- if ("ensemble_prob" %in% names(preds)) "ensemble_prob" else "rf_prob"
+cat("Using", prob_col, "as primary probability column\n")
+
+df <- preds |>
+  left_join(features, by = "parcel_number") |>
+  left_join(opa, by = "parcel_number") |>
+  mutate(prob_tier = factor(to_tier(.data[[prob_col]]),
+                            levels = TIER_LEVELS, ordered = TRUE))
+```
+
+## 2. Per-ZIP AUC
+
+```{r zip-auc}
+safe_auc <- function(y, p) {
+  if (length(unique(y)) < 2 || length(y) < 10) return(NA_real_)
+  as.numeric(yardstick::roc_auc_vec(factor(y, levels = c(1, 0)), p,
+                                    event_level = "first"))
+}
+
+zip_auc <- df |>
+  filter(!is.na(zip_code)) |>
+  group_by(zip_code) |>
+  filter(n() >= 50, sum(ovs == 1) >= 5) |>
+  summarise(n_parcels = n(),
+            n_vacant  = sum(ovs == 1),
+            prev_rate = mean(ovs == 1),
+            auc       = safe_auc(ovs, .data[[prob_col]]),
+            .groups = "drop") |>
+  arrange(auc)
+
+cat(sprintf("ZIPs evaluated: %d | median AUC: %.3f | < 0.70: %d\n",
+            nrow(zip_auc), median(zip_auc$auc, na.rm = TRUE),
+            sum(zip_auc$auc < 0.70, na.rm = TRUE)))
+zip_auc |> head(10)
+```
+
+```{r zip-auc-plot, fig.width=13, fig.height=5}
+zip_p <- zip_auc |>
+  mutate(zip_code = factor(zip_code, levels = zip_code)) |>
+  ggplot(aes(zip_code, auc, fill = auc)) +
+  geom_col() +
+  scale_fill_distiller(palette = "RdYlBu", direction = 1, limits = c(0, 1)) +
+  geom_hline(yintercept = 0.70, color = "tomato", linetype = "dashed") +
+  ylim(0, 1) +
+  labs(title = sprintf("Model AUC by ZIP code (%d ZIPs)", nrow(zip_auc)),
+       x = NULL, y = "AUC") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, size = 6))
+ggsave(file.path(GRAPH_PATH, "auc_by_zip.png"), zip_p,
+       width = 13, height = 5, dpi = 200)
+zip_p
+```
+
+## 3. Per-building-type AUC
+
+```{r bldg-auc}
+bldg_auc <- df |>
+  filter(!is.na(category_code_description)) |>
+  group_by(category_code_description) |>
+  filter(n() >= 100, sum(ovs == 1) >= 10) |>
+  summarise(n_parcels = n(),
+            n_vacant  = sum(ovs == 1),
+            prev_rate = mean(ovs == 1),
+            auc       = safe_auc(ovs, .data[[prob_col]]),
+            .groups = "drop") |>
+  arrange(desc(n_parcels))
+bldg_auc
+```
+
+## 4. Tier distribution
+
+```{r tier-dist}
+TIER_COLORS <- c(
+  "Very Unlikely (0–0.2)" = "#4575b4",
+  "Unlikely (0.2–0.4)"    = "#91bfdb",
+  "Maybe (0.4–0.6)"       = "#ffffbf",
+  "Likely (0.6–0.8)"      = "#fc8d59",
+  "Very Likely (0.8–1.0)" = "#d73027"
+)
+
+tier_summary <- df |>
+  group_by(prob_tier) |>
+  summarise(n_parcels = n(),
+            n_ovs     = sum(ovs == 1),
+            ovs_rate  = mean(ovs == 1),
+            mean_prob = mean(.data[[prob_col]]),
+            .groups = "drop") |>
+  mutate(pct = n_parcels / sum(n_parcels))
+tier_summary
+```
+
+```{r tier-plot, fig.width=13, fig.height=4.5}
+p1 <- ggplot(tier_summary, aes(prob_tier, n_parcels, fill = prob_tier)) +
+  geom_col() +
+  scale_fill_manual(values = TIER_COLORS, guide = "none") +
+  geom_text(aes(label = scales::comma(n_parcels)), vjust = -0.3, size = 3) +
+  labs(x = NULL, y = "N parcels") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+
+p2 <- ggplot(tier_summary, aes(prob_tier, ovs_rate, fill = prob_tier)) +
+  geom_col() +
+  scale_fill_manual(values = TIER_COLORS, guide = "none") +
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(label = scales::percent(ovs_rate, 0.1)),
+            vjust = -0.3, size = 3) +
+  labs(x = NULL, y = "OVS=1 rate") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+
+tp <- patchwork::wrap_plots(p1, p2, ncol = 2) +
+  patchwork::plot_annotation(title = "Tier distribution")
+ggsave(file.path(GRAPH_PATH, "tier_distribution.png"),
+       tp, width = 13, height = 4.5, dpi = 200)
+tp
+```
+
+## 5. Ward-level summary
+
+```{r ward-summary}
+high_tiers <- c("Likely (0.6–0.8)", "Very Likely (0.8–1.0)")
+
+ward_summary <- df |>
+  filter(!is.na(geographic_ward)) |>
+  group_by(geographic_ward) |>
+  summarise(
+    n_parcels      = n(),
+    n_ovs          = sum(ovs == 1),
+    ovs_rate       = mean(ovs == 1),
+    mean_prob      = mean(.data[[prob_col]]),
+    n_very_likely  = sum(prob_tier == "Very Likely (0.8–1.0)"),
+    n_high_risk    = sum(prob_tier %in% high_tiers),
+    high_risk_rate = mean(prob_tier %in% high_tiers),
+    .groups = "drop"
+  ) |>
+  arrange(desc(mean_prob))
+ward_summary |> head(15)
+```
+
+```{r ward-plot, fig.width=10, fig.height=6}
+top20 <- ward_summary |> slice_max(mean_prob, n = 20)
+ward_p <- ggplot(top20, aes(mean_prob, fct_reorder(factor(geographic_ward), mean_prob))) +
+  geom_col(fill = "#d73027") +
+  geom_text(aes(label = sprintf("%.3f", mean_prob)), hjust = -0.1, size = 3) +
+  labs(title = "Top 20 wards by mean ensemble probability",
+       x = "Mean P(vacant)", y = NULL) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "ward_mean_prob.png"), ward_p,
+       width = 10, height = 6, dpi = 200)
+ward_p
+```
+
+## 6. Equity audit — AUC by census-tract median household income
+
+```{r acs-load}
+acs_path <- file.path(DATA_PATH, "acs_income_phl.csv")
+acs_income <- NULL
+
+if (file.exists(acs_path)) {
+  acs_income <- read_csv(acs_path, show_col_types = FALSE)
+  if (!"census_tract_key" %in% names(acs_income)) {
+    geoid_col <- intersect(c("GEOID", "geoid"), names(acs_income))[1]
+    if (!is.na(geoid_col)) {
+      acs_income$census_tract_key <- str_sub(as.character(acs_income[[geoid_col]]), -6)
+    }
+  }
+  acs_income$census_tract_key <- str_pad(as.character(acs_income$census_tract_key),
+                                         width = 6, side = "left", pad = "0")
+  cat("ACS income loaded:", nrow(acs_income), "tracts\n")
+} else if (requireNamespace("tidycensus", quietly = TRUE) &&
+           Sys.getenv("CENSUS_API_KEY") != "") {
+  acs_income <- tidycensus::get_acs(
+    geography = "tract", state = "PA", county = "Philadelphia",
+    variables = "B19013_001", year = 2022
+  ) |>
+    transmute(census_tract_key = str_sub(GEOID, -6),
+              median_income = estimate)
+  write_csv(acs_income, acs_path)
+} else {
+  message("No CENSUS_API_KEY and no acs_income_phl.csv — equity audit will skip.")
+}
+```
+
+```{r acs-merge}
+make_tract_key <- function(t) {
+  ifelse(is.na(t), NA_character_,
+         str_pad(as.character(round(as.numeric(t) * 100)),
+                 width = 6, side = "left", pad = "0"))
+}
+
+if (!is.null(acs_income)) {
+  df_eq <- df |>
+    mutate(census_tract_key = make_tract_key(census_tract)) |>
+    left_join(acs_income |> select(census_tract_key, median_income),
+              by = "census_tract_key")
+  coverage <- mean(!is.na(df_eq$median_income))
+  cat(sprintf("Coverage: %.1f%%\n", 100 * coverage))
+} else {
+  df_eq <- df |> mutate(median_income = NA_real_)
+  coverage <- 0
+}
+```
+
+```{r equity}
+eq <- NULL
+if (!is.null(acs_income) && coverage > 0.5) {
+  df_eq <- df_eq |>
+    mutate(income_quintile = cut(
+      median_income,
+      breaks = quantile(median_income, probs = seq(0, 1, 0.2), na.rm = TRUE),
+      labels = c("Q1 (lowest)", "Q2", "Q3", "Q4", "Q5 (highest)"),
+      include.lowest = TRUE
+    ))
+  eq <- df_eq |>
+    filter(!is.na(income_quintile)) |>
+    group_by(income_quintile) |>
+    summarise(n_parcels = n(),
+              n_vacant  = sum(ovs == 1),
+              obs_rate  = mean(ovs == 1),
+              mean_pred = mean(.data[[prob_col]]),
+              auc       = safe_auc(ovs, .data[[prob_col]]),
+              .groups = "drop")
+  print(eq)
+} else {
+  message("Equity audit skipped (insufficient ACS coverage)")
+}
+```
+
+```{r equity-plot, eval=!is.null(eq), fig.width=9, fig.height=4}
+eq_long <- eq |> select(income_quintile, obs_rate, mean_pred) |>
+  pivot_longer(-income_quintile, names_to = "metric", values_to = "value")
+eq_p <- ggplot(eq_long, aes(income_quintile, value, fill = metric)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(obs_rate = "#2166ac", mean_pred = "#d6604d"),
+                    labels = c("Observed vacancy rate", "Mean predicted P(vacant)")) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Observed vs predicted vacancy rate by income quintile",
+       x = NULL, y = "Rate", fill = NULL) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "equity_income_quintile.png"),
+       eq_p, width = 9, height = 4, dpi = 200)
+eq_p
+```
+
+## 7. Export
+
+```{r export}
+export_cols <- c("parcel_number", "ovs", "data_split",
+                 prob_col, "prob_tier",
+                 "zip_code", "geographic_ward", "census_tract",
+                 "category_code", "category_code_description")
+df |> select(any_of(export_cols)) |>
+  write_csv(file.path(OUT_PATH, "predictions_04b.csv"))
+
+write_csv(ward_summary, file.path(OUT_PATH, "ward_summary_04b.csv"))
+write_csv(zip_auc,     file.path(OUT_PATH, "zip_auc_04b.csv"))
+if (!is.null(eq)) write_csv(eq, file.path(OUT_PATH, "equity_income_auc.csv"))
+```

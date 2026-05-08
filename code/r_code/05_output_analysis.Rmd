@@ -1,0 +1,351 @@
+---
+title: "PhillyStat360 — 05: Output Analysis (R port)"
+output: html_document
+---
+
+R port of `code/python/05_output_analysis.ipynb`. Stakeholder-facing analysis
+of the final ensemble predictions.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(yardstick)
+  library(sf)
+  library(leaflet)
+  library(tigris)
+})
+
+ROOT       <- here::here()
+RAW_PATH   <- file.path(ROOT, "rawdata")
+DATA_PATH  <- file.path(ROOT, "data")
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+```
+
+## 1. Load predictions & metadata
+
+```{r load}
+preds <- read_csv(file.path(PY_PATH, "all_predictions_rf.csv"),
+                  show_col_types = FALSE) |>
+  mutate(parcel_number = as.character(parcel_number))
+
+features_df <- read_csv(file.path(DATA_PATH, "features_residential.csv"),
+                        show_col_types = FALSE) |>
+  mutate(parcel_number = as.character(parcel_number))
+
+ovs_meta <- read_csv(file.path(DATA_PATH, "ovs_residential.csv"),
+                     show_col_types = FALSE) |>
+  mutate(parcel_number = as.character(parcel_number)) |>
+  select(parcel_number, category_code, category_code_description,
+         zip_code, census_tract, zoning) |>
+  distinct(parcel_number, .keep_all = TRUE)
+
+opa_extra <- read_csv(file.path(RAW_PATH, "opa_properties_public.csv"),
+                      col_select = c("parcel_number", "geographic_ward",
+                                     "location"),
+                      show_col_types = FALSE) |>
+  mutate(parcel_number = as.character(parcel_number)) |>
+  rename(address = location) |>
+  distinct(parcel_number, .keep_all = TRUE)
+
+ovs_meta <- ovs_meta |> left_join(opa_extra, by = "parcel_number")
+
+prob_col     <- if ("ensemble_prob"     %in% names(preds)) "ensemble_prob"     else "rf_prob"
+prob_raw_col <- if ("ensemble_prob_raw" %in% names(preds)) "ensemble_prob_raw" else "rf_prob"
+cat("Primary prob column:", prob_col, "(raw:", prob_raw_col, ")\n")
+
+analysis <- preds |>
+  left_join(features_df |> select(parcel_number, exterior_condition,
+                                  building_age, log_livable_area),
+            by = "parcel_number") |>
+  left_join(ovs_meta, by = "parcel_number")
+```
+
+## 2. Distribution by OPA category
+
+### 2a. Per-category table
+
+```{r cat-table}
+type_summary <- analysis |>
+  filter(!is.na(category_code_description)) |>
+  group_by(category_code_description) |>
+  summarise(
+    n_parcels = n(),
+    n_observed_vac = sum(ovs == 1),
+    obs_rate = mean(ovs == 1),
+    mean_pred_prob = mean(.data[[prob_col]]),
+    median_pred_prob = median(.data[[prob_col]]),
+    .groups = "drop"
+  ) |>
+  arrange(desc(mean_pred_prob))
+type_summary
+```
+
+### 2b. Density plot
+
+```{r cat-density, fig.width=11, fig.height=6}
+major_cats <- type_summary |> filter(n_parcels >= 500) |>
+  pull(category_code_description)
+nonzero <- analysis |>
+  filter(category_code_description %in% major_cats,
+         .data[[prob_raw_col]] > 0)
+
+den_p <- ggplot(nonzero, aes(.data[[prob_raw_col]], color = category_code_description)) +
+  geom_density(linewidth = 0.7) +
+  xlim(0, 0.4) +
+  labs(title = "Probability distribution by OPA category",
+       x = sprintf("Raw P(vacant) [%s]", prob_raw_col),
+       color = NULL) +
+  theme_minimal() +
+  theme(legend.text = element_text(size = 7))
+ggsave(file.path(GRAPH_PATH, "prob_distribution_by_category.png"),
+       den_p, width = 11, height = 6, dpi = 200)
+den_p
+```
+
+### 2c. Mean P(vacant) by category
+
+```{r cat-mean, fig.width=10}
+mean_prob_cat <- analysis |>
+  filter(category_code_description %in% major_cats) |>
+  group_by(category_code_description) |>
+  summarise(mean_prob = mean(.data[[prob_col]]),
+            obs_rate = mean(ovs == 1),
+            .groups = "drop") |>
+  arrange(mean_prob) |>
+  mutate(category_code_description = factor(category_code_description,
+                                            levels = category_code_description))
+
+mp_p <- ggplot(mean_prob_cat, aes(y = category_code_description)) +
+  geom_col(aes(x = mean_prob), fill = "#2166ac", alpha = 0.85) +
+  geom_point(aes(x = obs_rate), color = "#d73027", shape = 18, size = 3) +
+  geom_text(aes(x = mean_prob, label = scales::percent(mean_prob, 0.1)),
+            hjust = -0.1, size = 3) +
+  labs(title = "Mean predicted P(vacant) by OPA category",
+       x = "Probability / Rate", y = NULL) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "mean_prob_by_category.png"), mp_p,
+       width = 10, height = max(4, 0.4 * nrow(mean_prob_cat)), dpi = 200)
+mp_p
+```
+
+### 2d. Category calibration
+
+```{r cat-calib, fig.width=8, fig.height=7}
+calib <- type_summary |> filter(n_parcels >= 200)
+cc_p <- ggplot(calib, aes(mean_pred_prob, obs_rate)) +
+  geom_abline(linetype = "dashed", color = "gray") +
+  geom_point(aes(size = n_parcels), color = "steelblue", alpha = 0.6) +
+  ggrepel::geom_text_repel(aes(label = str_trunc(category_code_description, 25)),
+                           size = 2.5) +
+  labs(title = "Category calibration",
+       x = "Mean predicted P(vacant)", y = "Observed vacancy rate") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "category_calibration.png"), cc_p,
+       width = 8, height = 7, dpi = 200)
+cc_p
+```
+
+## 3. Spatial summary by ZIP
+
+```{r zip-summary}
+zip_summary <- analysis |>
+  filter(!is.na(zip_code)) |>
+  group_by(zip_code) |>
+  summarise(n_parcels = n(),
+            n_obs_vacant = sum(ovs == 1),
+            obs_rate = mean(ovs == 1),
+            mean_pred_prob = mean(.data[[prob_col]]),
+            .groups = "drop") |>
+  arrange(desc(mean_pred_prob))
+zip_summary |> head(20)
+```
+
+```{r zip-bar, fig.width=10}
+sub <- zip_summary |> filter(n_parcels >= 100) |>
+  arrange(mean_pred_prob) |>
+  mutate(zip_code = factor(zip_code, levels = zip_code))
+zb_p <- ggplot(sub, aes(y = zip_code)) +
+  geom_col(aes(x = mean_pred_prob, fill = mean_pred_prob)) +
+  scale_fill_distiller(palette = "Blues", direction = 1, guide = "none") +
+  geom_point(aes(x = obs_rate), color = "black", shape = 18, size = 2) +
+  labs(title = "Mean predicted P(vacant) by ZIP code",
+       x = "Probability / Rate", y = NULL) +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 6))
+ggsave(file.path(GRAPH_PATH, "zip_mean_prob_bar.png"), zb_p,
+       width = 10, height = max(7, 0.25 * nrow(sub)), dpi = 200)
+zb_p
+```
+
+### 3c. Choropleth (tigris)
+
+```{r choropleth}
+zcta_gdf <- NULL
+zcta_gdf <- tryCatch({
+  options(tigris_use_cache = TRUE)
+  z <- tigris::zctas(year = 2020, cb = TRUE)
+  z <- z |> filter(str_starts(as.character(ZCTA5CE20), "191"))
+  zip_summary_clean <- zip_summary |>
+    mutate(zip_code = str_pad(as.character(as.integer(zip_code)),
+                              width = 5, side = "left", pad = "0")) |>
+    filter(!is.na(zip_code))
+  z |> left_join(zip_summary_clean, by = c("ZCTA5CE20" = "zip_code")) |>
+    filter(!is.na(mean_pred_prob))
+}, error = function(e) {
+  message("tigris fetch failed — choropleth skipped: ", e$message)
+  NULL
+})
+```
+
+```{r choropleth-plot, eval=!is.null(zcta_gdf), fig.width=9, fig.height=9}
+ch_p <- ggplot(zcta_gdf) +
+  geom_sf(aes(fill = mean_pred_prob), color = "white", linewidth = 0.4) +
+  scale_fill_distiller(palette = "Blues", direction = 1) +
+  labs(title = "Mean predicted vacancy probability by ZIP code",
+       fill = "Mean P(vacant)") +
+  theme_void()
+ggsave(file.path(GRAPH_PATH, "spatial_zip_choropleth.png"),
+       ch_p, width = 9, height = 9, dpi = 200)
+ch_p
+```
+
+### 3d. Interactive leaflet map
+
+```{r leaflet-map, eval=!is.null(zcta_gdf)}
+m <- leaflet(zcta_gdf |> st_transform(4326)) |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  setView(lng = -75.1652, lat = 39.9526, zoom = 11) |>
+  addPolygons(
+    fillColor = ~colorNumeric("Blues", mean_pred_prob)(mean_pred_prob),
+    fillOpacity = 0.7, color = "white", weight = 0.5,
+    popup = ~paste0("ZIP: ", ZCTA5CE20,
+                    "<br>Parcels: ", n_parcels,
+                    "<br>Observed vacant: ", n_obs_vacant,
+                    "<br>Observed rate: ", round(obs_rate, 4),
+                    "<br>Mean P(vacant): ", round(mean_pred_prob, 4))
+  ) |>
+  addLegend(pal = colorNumeric("Blues", zcta_gdf$mean_pred_prob),
+            values = ~mean_pred_prob, title = "Mean P(vacant)")
+htmlwidgets::saveWidget(m, file.path(OUT_PATH, "vacancy_risk_map.html"),
+                        selfcontained = TRUE)
+m
+```
+
+## 4. Capacity-based threshold table
+
+```{r capacity}
+labeled <- analysis |> filter(!is.na(ovs), !is.na(.data[[prob_raw_col]]))
+score <- labeled[[prob_raw_col]]
+y <- labeled$ovs
+
+thresholds_seq <- seq(0.01, 0.98, by = 0.01)
+n_pos <- sum(y == 1)
+
+capacity_df <- map_dfr(thresholds_seq, \(t) {
+  flagged <- score >= t
+  n_flag <- sum(flagged)
+  if (n_flag == 0) return(NULL)
+  n_tp <- sum(flagged & y == 1)
+  tibble(threshold = round(t, 3),
+         n_flagged = n_flag,
+         precision = n_tp / n_flag,
+         recall    = n_tp / max(n_pos, 1))
+})
+head(capacity_df)
+```
+
+```{r capacity-plot, fig.width=10, fig.height=5}
+cap_p <- capacity_df |>
+  pivot_longer(c(precision, recall), names_to = "metric", values_to = "value") |>
+  ggplot(aes(n_flagged, value, color = metric)) +
+  geom_line(linewidth = 1) +
+  scale_x_log10() +
+  ylim(0, 1) +
+  scale_color_manual(values = c(precision = "steelblue", recall = "tomato")) +
+  labs(title = "Capacity-based threshold curve",
+       x = "Parcels flagged (log scale)", y = "Rate") +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "capacity_threshold_curve.png"),
+       cap_p, width = 10, height = 5, dpi = 200)
+cap_p
+```
+
+```{r capacity-targets}
+capacity_targets <- c(100, 250, 500, 1000, 2000, 5000, 10000)
+capacity_lookup <- map_dfr(capacity_targets, \(cap) {
+  candidate <- capacity_df |> filter(n_flagged >= cap)
+  if (!nrow(candidate)) {
+    return(tibble(target_capacity = cap, n_flagged = NA, threshold = NA,
+                  precision = NA_real_, recall = NA_real_))
+  }
+  row <- candidate |> arrange(n_flagged) |> head(1)
+  tibble(target_capacity = cap, n_flagged = row$n_flagged,
+         threshold = row$threshold,
+         precision = row$precision, recall = row$recall)
+})
+capacity_lookup
+```
+
+## 5. Export summaries
+
+```{r export}
+write_csv(zip_summary,  file.path(OUT_PATH, "output_zip_summary.csv"))
+write_csv(type_summary, file.path(OUT_PATH, "output_category_summary.csv"))
+write_csv(capacity_df,  file.path(OUT_PATH, "capacity_threshold_curve.csv"))
+
+cat("\n--- 05 Output Analysis Summary ---\n")
+cat(sprintf("Parcels analyzed: %d\n", nrow(analysis)))
+cat(sprintf("ZIPs covered:     %d\n", n_distinct(na.omit(analysis$zip_code))))
+cat(sprintf("Categories:       %d\n", n_distinct(na.omit(analysis$category_code_description))))
+cat(sprintf("Mean P(vacant):   %.4f\n", mean(analysis[[prob_col]])))
+```
+
+## 6. GeoJSON export (heavy — gated)
+
+```{r geojson-export}
+RUN_GEOJSON_EXPORT <- FALSE  # set TRUE to run; needs PWD_PARCELS.geojson
+
+if (RUN_GEOJSON_EXPORT) {
+  pwd_path <- file.path(RAW_PATH, "PWD_PARCELS.geojson")
+  if (!file.exists(pwd_path)) {
+    message("PWD_PARCELS.geojson not found — skipping export")
+  } else {
+    parcels_sf <- st_read(pwd_path, quiet = TRUE)
+    names(parcels_sf) <- tolower(names(parcels_sf))
+    if ("brt_id" %in% names(parcels_sf)) {
+      parcels_sf <- parcels_sf |> rename(parcel_number = brt_id)
+    }
+    parcels_sf$parcel_number <- as.character(parcels_sf$parcel_number)
+
+    export_cols <- intersect(c("parcel_number", "ovs", "data_split",
+                                prob_col, prob_raw_col, "risk_score",
+                                "qtile_tier", "ensemble_flag",
+                                "rf_prob", "logit_prob", "xgb_prob", "lgb_prob",
+                                "rf_flag", "logit_flag", "xgb_flag", "lgb_flag",
+                                "zip_code", "census_tract", "geographic_ward",
+                                "address"), names(analysis))
+
+    sf_out <- parcels_sf |>
+      select(parcel_number) |>
+      inner_join(analysis |> select(any_of(export_cols)),
+                 by = "parcel_number") |>
+      st_transform(4326)
+
+    full_path <- file.path(OUT_PATH, "vacancy_predictions.geojson")
+    st_write(sf_out, full_path, delete_dsn = TRUE)
+
+    if ("ensemble_flag" %in% names(sf_out)) {
+      flagged <- sf_out |> filter(ensemble_flag == 1)
+      st_write(flagged, file.path(OUT_PATH, "vacancy_predictions_flagged.geojson"),
+               delete_dsn = TRUE)
+    }
+  }
+}
+```

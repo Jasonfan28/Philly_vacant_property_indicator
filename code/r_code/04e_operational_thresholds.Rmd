@@ -1,0 +1,132 @@
+---
+title: "PhillyStat360 — 04e: Operational thresholds & capacity flags (R port)"
+output: html_document
+---
+
+R port of `code/python/04e_operational_thresholds.ipynb`. Translates
+`ensemble_prob` into a deployable flag list using a per-ward inspection budget.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(tidyverse)
+})
+
+ROOT       <- here::here()
+PY_PATH    <- file.path(ROOT, "data_py")
+OUT_PATH   <- PY_PATH
+GRAPH_PATH <- file.path(ROOT, "graphs", "python")
+dir.create(GRAPH_PATH, recursive = TRUE, showWarnings = FALSE)
+```
+
+## 1. Load merged parcel-level frame
+
+```{r load}
+src <- file.path(OUT_PATH, "vs_city_vpi_parcel.csv")
+stopifnot(file.exists(src))
+df <- read_csv(src, show_col_types = FALSE) |>
+  mutate(parcel_number = str_trim(as.character(parcel_number)))
+
+if (!"geographic_ward" %in% names(df)) {
+  p04b <- read_csv(file.path(PY_PATH, "predictions_04b.csv"),
+                   col_select = c("parcel_number", "geographic_ward"),
+                   show_col_types = FALSE) |>
+    mutate(parcel_number = str_trim(as.character(parcel_number)))
+  df <- df |> left_join(p04b, by = "parcel_number")
+}
+
+cat(sprintf("Parcels: %d | wards: %d | citywide ovs: %.4f%%\n",
+            nrow(df),
+            length(unique(na.omit(df$geographic_ward))),
+            100 * mean(df$ovs)))
+```
+
+## 2. Capacity policy (per-ward top-N)
+
+```{r flag}
+CAPACITY_PCT <- 0.01
+
+flagged <- df |>
+  filter(!is.na(geographic_ward)) |>
+  group_by(geographic_ward) |>
+  arrange(desc(ensemble_prob), .by_group = TRUE) |>
+  mutate(rank_in_ward = row_number(),
+         cap = pmax(1L, as.integer(ceiling(n() * CAPACITY_PCT))),
+         model_flag = as.integer(rank_in_ward <= cap)) |>
+  ungroup() |>
+  select(parcel_number, model_flag)
+
+df <- df |> left_join(flagged, by = "parcel_number") |>
+  mutate(model_flag = replace_na(model_flag, 0L))
+
+cat(sprintf("Model-flagged: %d (%.2f%%)\n",
+            sum(df$model_flag), 100 * mean(df$model_flag)))
+cat(sprintf("VPI-flagged:   %d (%.2f%%)\n",
+            sum(df$vpi_flag), 100 * mean(df$vpi_flag)))
+```
+
+## 3. Headline precision-at-capacity
+
+```{r headline}
+perf <- function(rule) {
+  flag <- df[[rule]]
+  n_flag <- sum(flag == 1)
+  tp <- sum(flag == 1 & df$ovs == 1)
+  fn <- sum(flag == 0 & df$ovs == 1)
+  tibble(rule = rule, n_flagged = n_flag,
+         precision = if (n_flag > 0) tp / n_flag else NA_real_,
+         recall    = if ((tp + fn) > 0) tp / (tp + fn) else NA_real_,
+         tp = tp)
+}
+
+df$union_flag <- as.integer(df$model_flag == 1 | df$vpi_flag == 1)
+results <- bind_rows(perf("model_flag"), perf("vpi_flag"), perf("union_flag"))
+print(results)
+write_csv(results, file.path(OUT_PATH, "operational_precision_at_capacity.csv"))
+```
+
+## 4. Per-ward comparison
+
+```{r per-ward}
+ward_compare <- df |>
+  filter(!is.na(geographic_ward)) |>
+  group_by(geographic_ward) |>
+  summarise(
+    n_parcels = n(),
+    n_ovs     = sum(ovs == 1),
+    cap       = pmax(1L, as.integer(ceiling(n() * CAPACITY_PCT))),
+    model_tp  = sum(model_flag == 1 & ovs == 1),
+    vpi_tp    = sum(vpi_flag == 1 & ovs == 1),
+    vpi_n     = sum(vpi_flag),
+    .groups = "drop"
+  ) |>
+  mutate(model_precision = model_tp / cap,
+         vpi_precision   = ifelse(vpi_n > 0, vpi_tp / vpi_n, NA_real_)) |>
+  arrange(desc(n_ovs))
+
+ward_compare |> head(15)
+write_csv(ward_compare, file.path(OUT_PATH, "operational_flags_by_ward.csv"))
+```
+
+## 5. Per-ward precision plot
+
+```{r ward-plot, fig.width=10, fig.height=5}
+sub <- ward_compare |> filter(n_ovs >= 5) |> drop_na(vpi_precision, model_precision)
+lim <- max(c(sub$vpi_precision, sub$model_precision, 0.5)) * 1.05
+
+wp <- ggplot(sub, aes(vpi_precision, model_precision, size = n_parcels)) +
+  geom_point(alpha = 0.7, color = "#1f77b4") +
+  geom_abline(linetype = "dashed", color = "gray") +
+  coord_equal(xlim = c(0, lim), ylim = c(0, lim)) +
+  labs(title = sprintf("Above diagonal = model beats VPI (top %.0f%%/ward)",
+                       100 * CAPACITY_PCT),
+       x = "VPI precision per ward",
+       y = sprintf("Model precision @ top %.0f%% per ward", 100 * CAPACITY_PCT)) +
+  theme_minimal()
+ggsave(file.path(GRAPH_PATH, "operational_precision_at_capacity.png"),
+       wp, width = 10, height = 5, dpi = 200)
+wp
+```

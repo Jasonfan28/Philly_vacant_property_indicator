@@ -1,0 +1,108 @@
+---
+title: "PhillyStat360 — 06: Vector Tiling with Tippecanoe (R port)"
+output: html_document
+---
+
+R port of `code/python/06_tiling.ipynb`. Builds vector tilesets (`.pmtiles`)
+from the GeoJSON exports produced by `05_output_analysis.Rmd`.
+
+> Tippecanoe is a CLI tool — there is no R wrapper. This Rmd shells out to
+> `tippecanoe` via `system2()`. Install it first:
+>
+> - Linux/Colab: `apt-get install -y tippecanoe`
+> - macOS: `brew install tippecanoe`
+> - Windows: build the [Felt fork](https://github.com/felt/tippecanoe) under WSL or use Docker
+>
+> The tippecanoe binary must be on `PATH` for the chunks below to run.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## 0. Setup
+
+```{r paths}
+ROOT      <- here::here()
+PY_PATH   <- file.path(ROOT, "data_py")
+TILE_PATH <- file.path(PY_PATH, "tiles")
+dir.create(TILE_PATH, recursive = TRUE, showWarnings = FALSE)
+
+FULL_GEOJSON    <- file.path(PY_PATH, "vacancy_predictions.geojson")
+FLAGGED_GEOJSON <- file.path(PY_PATH, "vacancy_predictions_flagged.geojson")
+
+for (p in c(FULL_GEOJSON, FLAGGED_GEOJSON)) {
+  if (!file.exists(p)) {
+    message("[!] missing: ", p, "  — run 05_output_analysis.Rmd §6 first")
+  } else {
+    cat(sprintf("[ok] %s: %.1f MB\n",
+                basename(p), file.info(p)$size / 1e6))
+  }
+}
+```
+
+## 1. Verify tippecanoe install
+
+```{r tippecanoe-check}
+have_tippecanoe <- function() nzchar(Sys.which("tippecanoe"))
+stopifnot(have_tippecanoe())
+system2("tippecanoe", "--version")
+```
+
+## 2. Tile the flagged-only set (small, fast)
+
+```{r tile-flagged}
+flagged_pmtiles <- file.path(TILE_PATH, "vacancy_flagged.pmtiles")
+args <- c(
+  "-o", shQuote(flagged_pmtiles),
+  "-l", "flagged",
+  "-n", shQuote("PhillyStat360 Flagged Parcels (top 1%)"),
+  "-Z10", "-z16",
+  "--coalesce-densest-as-needed",
+  "--extend-zooms-if-still-dropping",
+  "--force",
+  shQuote(FLAGGED_GEOJSON)
+)
+cat("tippecanoe", paste(args, collapse = " "), "\n")
+status <- system2("tippecanoe", args)
+stopifnot(status == 0)
+cat(sprintf("Wrote %s (%.1f MB)\n",
+            flagged_pmtiles, file.info(flagged_pmtiles)$size / 1e6))
+```
+
+## 3. Tile the full prediction set
+
+```{r tile-full}
+full_pmtiles <- file.path(TILE_PATH, "vacancy_predictions.pmtiles")
+args <- c(
+  "-o", shQuote(full_pmtiles),
+  "-l", "parcels",
+  "-n", shQuote("PhillyStat360 Vacancy Predictions"),
+  "-Z10", "-z15",
+  "--drop-densest-as-needed",
+  "--extend-zooms-if-still-dropping",
+  "--simplification=10",
+  "--force",
+  shQuote(FULL_GEOJSON)
+)
+cat("tippecanoe", paste(args, collapse = " "), "\n")
+status <- system2("tippecanoe", args)
+stopifnot(status == 0)
+cat(sprintf("Wrote %s (%.1f MB)\n",
+            full_pmtiles, file.info(full_pmtiles)$size / 1e6))
+```
+
+## 4. Verify outputs
+
+```{r verify}
+for (pmt in c(flagged_pmtiles, full_pmtiles)) {
+  cat("===", basename(pmt), "===\n")
+  cat(sprintf("Size: %.1f MB\n", file.info(pmt)$size / 1e6))
+  # First metadata line via tippecanoe-decode
+  tryCatch({
+    out <- system2("tippecanoe-decode",
+                   c("-s", "EPSG:4326", "-c", shQuote(pmt)),
+                   stdout = TRUE, stderr = FALSE)
+    cat(out[1], "\n\n")
+  }, error = function(e) message(e$message))
+}
+```

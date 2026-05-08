@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vacancy Risk Dashboard — Philly Stat 360</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+  <!-- head 里 -->
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+
+  <style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue-dark:   #0f4d90;
+    --blue-mid:    #2176d2;
+    --blue-light:  #96c9ff;
+    --blue-pale:   #daedfe;
+    --yellow:      #f3c613;
+    --green:       #3a833c;
+    --red:         #cc3000;
+    --body:        #444;
+    --muted:       #a1a1a1;
+    --border:      #cfcfcf;
+    --surface:     #f0f0f0;
+    --white:       #fff;
+    --font-head:   'Montserrat', sans-serif;
+    --font-body:   'Open Sans', sans-serif;
+  }
+
+  html, body { height:100%; font-family:var(--font-body); font-size:14px; line-height:1.5; color:var(--body); background:var(--surface); -webkit-font-smoothing:antialiased; overflow:hidden; }
+  a { color:var(--blue-mid); text-decoration:underline; }
+  a:hover { color:var(--blue-dark); }
+
+  /* HEADER */
+  #header { background:var(--blue-dark); color:var(--white); height:56px; display:flex; align-items:center; justify-content:space-between; padding:0 20px 0 16px; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,.32); z-index:1000; position:relative; }
+  .header-brand { display:flex; align-items:center; gap:14px; text-decoration:none; }
+  .header-brand::before { content:''; display:block; width:3px; height:32px; background:var(--yellow); border-radius:2px; flex-shrink:0; }
+  .header-brand-label { font-family:var(--font-head); font-weight:700; font-size:14px; color:var(--white); letter-spacing:-0.1px; line-height:1.2; }
+  .header-brand-label span { display:block; font-size:10px; font-weight:600; color:rgba(255,255,255,.6); letter-spacing:0.4px; text-transform:uppercase; margin-top:1px; }
+  .header-right { display:flex; align-items:center; gap:10px; }
+  .badge-experimental { background:var(--yellow); color:#1a1a1a; font-family:var(--font-head); font-size:10px; font-weight:700; padding:3px 9px; border-radius:2px; letter-spacing:0.5px; text-transform:uppercase; }
+  #about-btn { font-family:var(--font-body); font-size:12px; font-weight:600; background:transparent; border:1.5px solid rgba(255,255,255,.5); color:var(--white); border-radius:2px; padding:5px 14px; cursor:pointer; text-transform:uppercase; letter-spacing:0.4px; transition:background .15s,border-color .15s; }
+  #about-btn:hover { background:rgba(255,255,255,.12); border-color:var(--white); }
+  .header-back { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:rgba(255,255,255,.65); text-decoration:none; display:flex; align-items:center; gap:5px; transition:color .15s; }
+  .header-back:hover { color:var(--yellow); }
+  .header-back::before { content:'←'; font-size:13px; }
+
+  /* LAYOUT */
+  #app { display:flex; height:calc(100vh - 56px); overflow:hidden; }
+
+  /* SIDEBAR */
+  #sidebar { width:268px; flex-shrink:0; background:var(--white); border-right:1px solid var(--border); overflow-y:auto; display:flex; flex-direction:column; z-index:500; }
+  #sidebar::-webkit-scrollbar { width:4px; }
+  #sidebar::-webkit-scrollbar-thumb { background:var(--border); }
+  .sidebar-section { padding:15px 16px 13px; border-bottom:1px solid var(--border); }
+  .sidebar-section:last-child { border-bottom:none; }
+  .sidebar-section h3 { font-family:var(--font-head); font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin-bottom:12px; display:flex; align-items:center; gap:7px; }
+  .sidebar-section h3::before { content:''; display:inline-block; width:16px; height:2px; background:var(--yellow); flex-shrink:0; }
+
+  /* Legend */
+  .legend-item { display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:12px; color:var(--body); }
+  .legend-swatch { width:12px; height:12px; border-radius:2px; flex-shrink:0; }
+  .legend-item-label { font-weight:600; font-size:12px; }
+  .legend-item-sub { font-size:10px; color:var(--muted); }
+  .choropleth-wrap { margin-top:12px; padding-top:11px; border-top:1px solid var(--border); }
+  .choropleth-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--muted); margin-bottom:5px; }
+  .choropleth-bar { height:9px; background:linear-gradient(to right,#ffffb2,#fecc5c,#fd8d3c,#e31a1c,#800026); border-radius:2px; margin-bottom:3px; }
+  .choropleth-ends { display:flex; justify-content:space-between; font-size:10px; color:var(--muted); }
+
+  /* Stat cards */
+  .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+  .stat-card { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--blue-mid); border-radius:3px; padding:8px 10px; }
+  .stat-card.accent-yellow { border-left-color:var(--yellow); }
+  .stat-card.accent-red    { border-left-color:var(--red); }
+  .stat-card.accent-green  { border-left-color:var(--green); }
+  .stat-card .val { font-family:var(--font-head); font-size:18px; font-weight:800; color:var(--blue-dark); line-height:1; letter-spacing:-0.5px; }
+  .stat-card .lbl { font-size:10px; color:var(--muted); margin-top:3px; text-transform:uppercase; letter-spacing:0.3px; font-weight:600; }
+  #tier-chart-wrap { position:relative; height:116px; }
+
+  /* Map mode badge */
+  .map-mode-badge { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:3px; padding:7px 10px; }
+  .map-mode-badge strong { display:block; font-family:var(--font-head); font-size:11px; font-weight:700; color:var(--blue-dark); margin-bottom:1px; }
+  .map-mode-badge span { color:var(--muted); font-size:10px; }
+
+  /* Zoom hint */
+  .zoom-hint { background:var(--blue-pale); border:1px solid var(--blue-light); border-left:3px solid var(--blue-mid); border-radius:3px; padding:8px 10px; font-size:11px; color:var(--blue-dark); line-height:1.45; }
+  .zoom-hint strong { font-weight:700; }
+
+  /* Ward / tract filter buttons */
+  .filter-btn-wrap { display:flex; flex-wrap:wrap; gap:5px; max-height:220px; overflow-y:auto; }
+  .filter-btn-wrap::-webkit-scrollbar { width:3px; }
+  .filter-btn-wrap::-webkit-scrollbar-thumb { background:var(--border); }
+  .wd-btn {
+    font-family:var(--font-head); font-size:10px; font-weight:700;
+    padding:3px 8px; border-radius:2px;
+    border:1px solid var(--border); background:var(--surface);
+    color:var(--body); cursor:pointer; transition:all .12s;
+  }
+  .wd-btn:hover { border-color:var(--blue-dark); color:var(--blue-dark); }
+  .wd-btn.active { background:var(--blue-dark); color:var(--white); border-color:var(--blue-dark); }
+  .clear-btn {
+    font-family:var(--font-head); font-size:10px; font-weight:700;
+    text-transform:uppercase; letter-spacing:0.4px;
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:2px; padding:4px 10px; cursor:pointer;
+    color:var(--muted); width:100%; margin-bottom:8px;
+  }
+  .clear-btn:hover { background:var(--border); }
+
+  /* MAP */
+  #map-container { flex:1; position:relative; overflow:hidden; }
+  #map { width:100%; height:100%; }
+  #map-info-badge { position:absolute; bottom:28px; right:14px; background:rgba(255,255,255,.95); border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:3px; padding:7px 11px; font-size:11px; color:var(--muted); z-index:900; pointer-events:none; max-width:210px; line-height:1.4; }
+  #map-info-badge strong { font-family:var(--font-head); font-size:11px; font-weight:700; color:var(--blue-dark); display:block; margin-bottom:1px; }
+
+  /* Search box */
+  #search-box { position:absolute; top:14px; left:14px; z-index:900; display:flex; gap:6px; }
+  #search-input { width:280px; padding:8px 12px; border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:3px; font-family:var(--font-body); font-size:12px; color:var(--body); background:var(--white); box-shadow:0 2px 8px rgba(0,0,0,.12); outline:none; }
+  #search-btn { padding:8px 14px; background:var(--blue-dark); color:var(--white); border:none; border-radius:3px; font-family:var(--font-head); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.12); }
+  #search-btn:hover { background:var(--blue-mid); }
+
+  /* Search results dropdown */
+  #search-results { position:absolute; top:54px; left:14px; width:350px; background:var(--white); border:1px solid var(--border); border-top:none; border-radius:0 0 3px 3px; z-index:901; box-shadow:0 4px 12px rgba(0,0,0,.1); display:none; }
+  .sri { padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); font-size:12px; }
+  .sri:hover { background:var(--surface); }
+  .sri:last-child { border-bottom:none; }
+  .sri-parcel { font-weight:600; color:var(--blue-dark); }
+  .sri-meta { font-size:10px; color:var(--muted); margin-top:1px; }
+
+  /* MAPLIBRE POPUP */
+  .maplibregl-popup-content { padding:0 !important; border-radius:3px !important; overflow:hidden; min-width:272px; max-width:304px; box-shadow:0 6px 24px rgba(0,0,0,.18) !important; font-family:var(--font-body); }
+  .popup-header { background:var(--blue-dark); padding:12px 14px 10px; border-bottom:3px solid var(--yellow); }
+  .popup-header .address { font-family:var(--font-head); font-size:13px; font-weight:700; color:var(--white); margin-bottom:2px; }
+  .popup-header .meta { font-size:11px; color:rgba(255,255,255,.6); }
+  .popup-risk-badge { display:inline-block; padding:2px 8px; border-radius:2px; font-family:var(--font-head); font-size:10px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; margin-top:7px; }
+  .badge-very-high { background:#7f0000; color:var(--white); }
+  .badge-high      { background:var(--red); color:var(--white); }
+  .badge-medium    { background:var(--yellow); color:#1a1a1a; }
+  .badge-low       { background:var(--blue-mid); color:var(--white); }
+  .badge-very-low  { background:#d0e8ff; color:var(--blue-dark); }
+  .popup-prob-bar-wrap { margin:8px 0 0; }
+  .popup-prob-bar-bg { background:rgba(255,255,255,.2); border-radius:2px; height:6px; position:relative; overflow:hidden; }
+  .popup-prob-bar-fill { position:absolute; left:0; top:0; height:100%; border-radius:2px; }
+  .popup-prob-label { display:flex; justify-content:space-between; font-size:10px; color:rgba(255,255,255,.5); margin-top:3px; }
+  .popup-body { padding:10px 14px 12px; }
+  .popup-section-label { font-family:var(--font-head); font-size:9px; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; color:var(--muted); margin:9px 0 5px; padding-bottom:4px; border-bottom:1px solid var(--border); }
+  .popup-section-label:first-child { margin-top:0; }
+  .life-history-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px 12px; }
+  .lh-item { display:flex; flex-direction:column; }
+  .lh-val { font-size:11px; font-weight:600; color:var(--blue-dark); }
+  .lh-lbl { font-size:10px; color:var(--muted); }
+  .ovs-indicators { display:flex; flex-direction:column; gap:4px; margin-bottom:4px; }
+  .ovs-item { font-size:11px; color:var(--body); }
+  .popup-atlas-link { display:block; text-align:center; margin-top:10px; padding:7px; background:var(--blue-pale); border-radius:2px; font-size:11px; font-weight:700; font-family:var(--font-head); color:var(--blue-dark); text-decoration:none; border:1px solid var(--blue-light); transition:background .15s; }
+  .popup-atlas-link:hover { background:var(--blue-light); }
+
+  /* ABOUT MODAL */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(8,32,68,.55); z-index:3000; align-items:center; justify-content:center; padding:24px; }
+  .modal-overlay.open { display:flex; }
+  .modal-box { background:var(--white); border-radius:3px; width:100%; max-width:640px; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 12px 48px rgba(0,0,0,.25); }
+  .modal-head { background:var(--blue-dark); color:var(--white); padding:18px 24px 14px; display:flex; align-items:flex-start; justify-content:space-between; border-bottom:3px solid var(--yellow); flex-shrink:0; }
+  .modal-head h2 { font-family:var(--font-head); font-size:16px; font-weight:700; line-height:1.2; }
+  .modal-head p { font-size:11px; color:rgba(255,255,255,.6); margin-top:3px; }
+  .modal-close { background:none; border:none; color:rgba(255,255,255,.7); font-size:20px; cursor:pointer; line-height:1; padding:2px; flex-shrink:0; margin-left:16px; transition:color .15s; }
+  .modal-close:hover { color:var(--yellow); }
+  .modal-scroll { overflow-y:auto; padding:20px 24px; flex:1; }
+  .modal-scroll h5 { font-family:var(--font-head); font-size:10px; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; color:var(--blue-dark); margin:18px 0 7px; padding-bottom:5px; border-bottom:1.5px solid var(--border); }
+  .modal-scroll h5:first-child { margin-top:0; }
+  .modal-scroll p { font-size:13px; color:var(--body); line-height:1.6; margin-bottom:8px; }
+  .modal-scroll ul { padding-left:18px; margin-bottom:8px; }
+  .modal-scroll li { font-size:13px; color:var(--body); margin-bottom:3px; line-height:1.5; }
+  .metric-row { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+  .metric-chip { background:var(--surface); border:1px solid var(--border); border-radius:2px; padding:4px 10px; font-size:11px; color:var(--body); }
+  .metric-chip strong { color:var(--blue-dark); font-weight:700; }
+  .disclaimer-box { background:#fff7ed; border:1.5px solid var(--yellow); border-radius:3px; padding:12px 14px; margin-top:14px; font-size:12px; color:#7c2d12; line-height:1.55; }
+  .disclaimer-box .disc-head { font-family:var(--font-head); font-weight:700; font-size:12px; display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+  .modal-foot { padding:12px 24px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; flex-shrink:0; }
+  .btn-close-modal { font-family:var(--font-head); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; background:var(--blue-dark); color:var(--white); border:none; border-radius:2px; padding:7px 20px; cursor:pointer; }
+  .btn-close-modal:hover { background:var(--blue-mid); }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header id="header">
+  <a class="header-brand" href="Vacancy Risk Landing Page.html" style="text-decoration:none;">
+    <img src="assets/logo2-white.png" alt="VPI" style="height:36px;width:auto;object-fit:contain;flex-shrink:0;">
+    <div class="header-brand-label">
+      Vacancy Risk Dashboard
+      <span>Philly Stat 360 · Predictive Model</span>
+    </div>
+  </a>
+  <div class="header-right">
+    <span class="badge-experimental">Experimental</span>
+    <button id="about-btn">About This Tool</button>
+    <a href="Vacancy Risk Landing Page.html" class="header-back">Overview</a>
+  </div>
+</header>
+
+<div id="app">
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar">
+
+    <!-- Risk Tiers Legend -->
+    <div class="sidebar-section">
+      <h3>Risk Tiers</h3>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#7f0000;"></div>
+        <div><div class="legend-item-label">Very High Risk</div><div class="legend-item-sub">Ensemble prob &ge; 80%</div></div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#cc3000;"></div>
+        <div><div class="legend-item-label">High Risk</div><div class="legend-item-sub">Ensemble prob 60&ndash;80%</div></div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#f3c613;"></div>
+        <div><div class="legend-item-label">Medium Risk</div><div class="legend-item-sub">Ensemble prob 40&ndash;60%</div></div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#96c9ff;"></div>
+        <div><div class="legend-item-label">Low Risk</div><div class="legend-item-sub">Ensemble prob 20&ndash;40%</div></div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#daedfe;border:1px solid #96c9ff;"></div>
+        <div><div class="legend-item-label">Very Low Risk</div><div class="legend-item-sub">Ensemble prob &lt; 20%</div></div>
+      </div>
+      <div class="choropleth-wrap">
+        <div class="choropleth-label">Ward Choropleth</div>
+        <div class="choropleth-bar"></div>
+        <div class="choropleth-ends"><span>Low risk</span><span>High risk</span></div>
+      </div>
+    </div>
+
+    <!-- Ward Summary -->
+    <div class="sidebar-section">
+      <h3>Ward Summary</h3>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="val" id="val-total">—</div>
+          <div class="lbl">Parcels Scored</div>
+        </div>
+        <div class="stat-card accent-red">
+          <div class="val" id="val-flagged">—</div>
+          <div class="lbl">Flagged Parcels</div>
+        </div>
+        <div class="stat-card accent-yellow">
+          <div class="val" id="val-ovs">—</div>
+          <div class="lbl">Observed Vacancy</div>
+        </div>
+        <div class="stat-card accent-green">
+          <div class="val" id="val-rate">—</div>
+          <div class="lbl">High-Risk Rate</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Wards Chart -->
+    <div class="sidebar-section">
+      <h3>Top Wards by Flagged Count</h3>
+      <div id="tier-chart-wrap">
+        <canvas id="tier-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Map View -->
+    <div class="sidebar-section">
+      <h3>Map View</h3>
+      <div class="map-mode-badge">
+        <strong id="map-mode-label">Ward Choropleth</strong>
+        <span id="map-mode-desc">Zoom to 13+ for parcel layer</span>
+      </div>
+    </div>
+
+    <!-- Ward Filter -->
+    <div class="sidebar-section">
+      <h3>Filter by Ward</h3>
+      <button class="clear-btn" id="ward-clear">Show All Wards</button>
+      <div class="filter-btn-wrap" id="ward-list"></div>
+    </div>
+
+    <!-- Risk Level Filter -->
+    <div class="sidebar-section">
+      <h3>Filter by Risk Level</h3>
+      <button class="clear-btn" id="risk-clear">Show All Parcels</button>
+      <div id="risk-list" style="display:flex;flex-direction:column;gap:5px;"></div>
+    </div>
+
+    <!-- Census Tract Filter -->
+    <div class="sidebar-section">
+      <h3>Filter by Census Tract</h3>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <input id="tract-search" type="text" placeholder="Search tract number..."
+          style="flex:1;padding:5px 8px;font-family:var(--font-body);font-size:11px;border:1px solid var(--border);border-radius:2px;color:var(--body);background:var(--white);outline:none;">
+        <button id="tract-clear" class="clear-btn" style="width:auto;margin:0;padding:4px 8px;white-space:nowrap;">Clear</button>
+      </div>
+      <div class="filter-btn-wrap" id="tract-list"></div>
+    </div>
+
+    <!-- Zoom Hint -->
+    <div class="sidebar-section">
+      <div class="zoom-hint">
+        <strong>Zoom tip &mdash;</strong>
+        Zoom in to level 13+ to reveal individual parcel risk colors. The ward choropleth fades as you zoom in.
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- MAP -->
+  <div id="map-container">
+    <div id="map"></div>
+
+    <div id="search-box">
+      <input id="search-input" type="text" placeholder="Search parcel number or address...">
+      <button id="search-btn">Search</button>
+    </div>
+    <div id="search-results"></div>
+
+    <div id="map-info-badge">
+      <strong id="map-mode-label2">Parcel Risk Layer</strong>
+      <span id="map-mode-desc2">Zoom &ge; 13 for parcel markers</span>
+    </div>
+  </div>
+</div>
+
+<!-- ABOUT MODAL -->
+<div class="modal-overlay" id="aboutModal" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div>
+        <h2>About This Dashboard</h2>
+        <p>Philly Stat 360 &middot; Residential Vacancy Risk Model</p>
+      </div>
+      <button class="modal-close" id="modal-close-btn">&times;</button>
+    </div>
+    <div class="modal-scroll">
+      <h5>What this shows</h5>
+      <p>An interactive map of predicted vacancy risk scores for residential parcels across Philadelphia. The ward choropleth shows average risk by ward; zoom to level 13+ for individual parcel risk colors.</p>
+      <h5>Model performance</h5>
+      <div class="metric-row">
+        <div class="metric-chip">AUC <strong>0.940</strong></div>
+        <div class="metric-chip">Sensitivity <strong>84.0%</strong></div>
+        <div class="metric-chip">Specificity <strong>89.8%</strong></div>
+        <div class="metric-chip">Parcels scored <strong>~436K</strong></div>
+      </div>
+      <h5>Data sources</h5>
+      <ul>
+        <li>OPA Properties Public — <em>OpenDataPhilly</em></li>
+        <li>L&amp;I Violations — <em>OpenDataPhilly</em></li>
+        <li>PWD Parcel geometries — <em>OpenDataPhilly</em></li>
+      </ul>
+      <div class="disclaimer-box">
+        <div class="disc-head">&#9888;&#65039; Experimental — Student Research Project</div>
+        This application is <strong>experimental</strong> and was developed as part of a student research project. Results must <strong>not</strong> be used for enforcement or resource-allocation decisions without independent expert review.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-close-modal" id="modal-close-btn2">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<script>
+'use strict';
+
+// Same-origin static asset; can be overridden to an external URL (S3/R2) if needed.
+const PMTILES_URL = 'vacancy_predictions.pmtiles';
+
+// ── PMTiles protocol ──────────────────────────────────────────
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol('pmtiles', protocol.tile);
+const p = new pmtiles.PMTiles(PMTILES_URL);
+protocol.add(p);
+
+// ── State ─────────────────────────────────────────────────────
+let map = null;
+let activeWard  = null;
+let activeTract = null;
+let activeRisk  = null;
+let wardChart   = null;
+let allWardStats = {};
+let wardBoundsIndex = {};
+let tractIndex = {};
+let wardStatsPromise = null;
+let wardGeoPromise = null;
+let flaggedDataPromise = null;
+let popup = new maplibregl.Popup({ closeButton: true, maxWidth: '310px' });
+
+// ── Popup helpers ─────────────────────────────────────────────
+function riskClass(prob) {
+  if (prob >= 0.8) return { label: 'Very High Risk', cls: 'badge-very-high' };
+  if (prob >= 0.6) return { label: 'High Risk',      cls: 'badge-high' };
+  if (prob >= 0.4) return { label: 'Medium Risk',    cls: 'badge-medium' };
+  if (prob >= 0.2) return { label: 'Low Risk',       cls: 'badge-low' };
+  return               { label: 'Very Low Risk',  cls: 'badge-very-low' };
+}
+
+function buildPopup(p) {
+  const prob = p.ensemble_prob || 0;
+  const pct  = (prob * 100).toFixed(1);
+  const { label, cls } = riskClass(prob);
+  const barColor = prob >= 0.6 ? '#cc3000' : prob >= 0.4 ? '#c87800' : '#2176d2';
+  return `
+    <div class="popup-header">
+      <div class="address">Parcel ${p.parcel_number || 'N/A'}</div>
+      <div class="meta">ZIP ${p.zip_code||'N/A'} &middot; Tract ${p.census_tract||'N/A'} &middot; Ward ${p.geographic_ward||'N/A'}</div>
+      <span class="popup-risk-badge ${cls}">${label}</span>
+      <div class="popup-prob-bar-wrap">
+        <div class="popup-prob-bar-bg">
+          <div class="popup-prob-bar-fill" style="width:${Math.min(pct,100)}%;background:${barColor};"></div>
+        </div>
+        <div class="popup-prob-label">
+          <span>Ensemble: <b>${pct}%</b></span>
+          <span>${p.qtile_tier||''}</span>
+        </div>
+      </div>
+    </div>
+    <div class="popup-body">
+      <div class="popup-section-label">Model Probabilities</div>
+      <div class="life-history-grid">
+        <div class="lh-item"><span class="lh-val">${((p.ensemble_prob||0)*100).toFixed(2)}%</span><span class="lh-lbl">Ensemble</span></div>
+        <div class="lh-item"><span class="lh-val">${p.risk_score||0}</span><span class="lh-lbl">Risk Score</span></div>
+      </div>
+      <div class="popup-section-label">Model Flags</div>
+      <div class="ovs-indicators">
+        <div class="ovs-item">Ensemble flagged: <b>${p.ensemble_flag ? 'Yes' : 'No'}</b></div>
+      </div>
+      <a class="popup-atlas-link" href="https://atlas.phila.gov/#/${p.parcel_number}" target="_blank" rel="noopener">
+        View on Atlas Phila &#8599;
+      </a>
+    </div>`;
+}
+
+// ── Color/opacity ramps for parcel layer ─────────────────────
+const probColor = [
+  'interpolate', ['linear'], ['get', 'ensemble_prob'],
+  0,   '#daedfe',
+  0.2, '#96c9ff',
+  0.4, '#f3c613',
+  0.6, '#cc3000',
+  0.8, '#7f0000'
+];
+const probOpacity = [
+  'interpolate', ['linear'], ['get', 'ensemble_prob'],
+  0, 0.15, 0.2, 0.5, 0.4, 0.7, 0.8, 0.9
+];
+
+// ── Ward choropleth color ─────────────────────────────────────
+const CHORO = ['#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026'];
+function choroColor(flagged, total, mean_prob) {
+  const v = mean_prob || 0;
+  return v >= 0.08 ? CHORO[4] : v >= 0.05 ? CHORO[3] : v >= 0.03 ? CHORO[2] : v >= 0.01 ? CHORO[1] : CHORO[0];
+}
+
+// ── Bounds helpers ────────────────────────────────────────────
+function expandBounds(b, lng, lat) {
+  if (!b.set) { b.minlng = lng; b.maxlng = lng; b.minlat = lat; b.maxlat = lat; b.set = true; return; }
+  if (lng < b.minlng) b.minlng = lng;
+  if (lng > b.maxlng) b.maxlng = lng;
+  if (lat < b.minlat) b.minlat = lat;
+  if (lat > b.maxlat) b.maxlat = lat;
+}
+function walkCoords(coords, b) {
+  if (typeof coords[0] === 'number') expandBounds(b, coords[0], coords[1]);
+  else coords.forEach(c => walkCoords(c, b));
+}
+
+// ── Static-data loaders (single-flight, cached) ───────────────
+function getWardStats() {
+  if (!wardStatsPromise) {
+    wardStatsPromise = fetch('ward_stats.json').then(r => r.json());
+  }
+  return wardStatsPromise;
+}
+
+function getWardGeo() {
+  if (!wardGeoPromise) {
+    wardGeoPromise = fetch('ward_boundaries.geojson').then(r => r.json()).then(geo => {
+      geo.features.forEach(f => {
+        const wardNum = String(parseInt(f.properties.ward_num) || '');
+        if (!wardNum) return;
+        const b = {};
+        walkCoords(f.geometry.coordinates, b);
+        if (b.set) wardBoundsIndex[wardNum] = b;
+      });
+      return geo;
+    });
+  }
+  return wardGeoPromise;
+}
+
+function getFlaggedData() {
+  if (!flaggedDataPromise) {
+    flaggedDataPromise = fetch('vacancy_predictions_flagged.geojson').then(r => r.json()).then(fc => {
+      fc.features.forEach(f => {
+        const t = f.properties.census_tract;
+        if (t == null) return;
+        const key = String(parseInt(t));
+        if (!tractIndex[key]) tractIndex[key] = { tract: key, flagged: 0, bounds: {} };
+        tractIndex[key].flagged++;
+        walkCoords(f.geometry.coordinates, tractIndex[key].bounds);
+      });
+      return fc;
+    });
+  }
+  return flaggedDataPromise;
+}
+
+// ── Ward choropleth (called once map is ready) ────────────────
+async function loadWardChoro() {
+  try {
+    const [stats, geoData] = await Promise.all([getWardStats(), getWardGeo()]);
+    const statMap = {};
+    stats.forEach(w => { statMap[String(w.ward)] = w; });
+    const features = geoData.features.map(f => {
+      const wardNum = String(parseInt(f.properties.ward_num) || '');
+      const stat = statMap[wardNum] || { flagged: 0, total: 0 };
+      return {
+        ...f,
+        properties: {
+          ...f.properties,
+          ward: wardNum,
+          flagged: stat.flagged,
+          total: stat.total,
+          color: choroColor(stat.flagged, stat.total, stat.mean_prob)
+        }
+      };
+    });
+    if (map && map.getSource('ward-choro')) {
+      map.getSource('ward-choro').setData({ type: 'FeatureCollection', features });
+    }
+  } catch(e) { console.warn('Ward choro failed:', e); }
+}
+
+// ── Summary ───────────────────────────────────────────────────
+async function loadSummary() {
+  try {
+    const stats = await getWardStats();
+    let total = 0, flagged = 0;
+    stats.forEach(w => { total += w.total || 0; flagged += w.flagged || 0; });
+    document.getElementById('val-total').textContent   = (total/1000).toFixed(0) + 'K';
+    document.getElementById('val-flagged').textContent = flagged.toLocaleString();
+    document.getElementById('val-ovs').textContent     = 'N/A';
+    document.getElementById('val-rate').textContent    = total ? ((flagged/total)*100).toFixed(2)+'%' : 'N/A';
+  } catch(e) { console.warn('Summary failed:', e); }
+}
+
+function updateSummaryCards(total, flagged, ovs, label) {
+  document.getElementById('val-total').textContent = total >= 1000 ? (total/1000).toFixed(1)+'K' : total;
+  document.getElementById('val-flagged').textContent = flagged.toLocaleString();
+  document.getElementById('val-ovs').textContent = (ovs && ovs > 0 && total) ? (ovs/total*100).toFixed(1)+'%' : 'N/A';
+  document.getElementById('val-rate').textContent = total ? ((flagged/total)*100).toFixed(2)+'%' : 'N/A';
+}
+
+// ── Ward filter ───────────────────────────────────────────────
+async function loadWards() {
+  try {
+    const wards = await getWardStats();
+    wards.forEach(w => { allWardStats[w.ward] = w; });
+    const container = document.getElementById('ward-list');
+    container.innerHTML = '';
+    wards.forEach(w => {
+      const btn = document.createElement('button');
+      btn.className = 'wd-btn';
+      btn.textContent = 'Wd ' + w.ward;
+      btn.dataset.ward = w.ward;
+      btn.title = `Ward ${w.ward} — ${w.flagged} flagged / ${w.total} total`;
+      btn.addEventListener('click', () => selectWard(w.ward, btn));
+      container.appendChild(btn);
+    });
+    const top10 = [...wards].sort((a,b) => b.flagged - a.flagged).slice(0, 10);
+    renderWardChart(top10);
+  } catch(e) { console.warn('Wards failed:', e); }
+}
+
+document.getElementById('ward-clear').addEventListener('click', () => {
+  activeWard = null;
+  document.querySelectorAll('#ward-list .wd-btn').forEach(b => b.classList.remove('active'));
+  updateFilter();
+  loadSummary();
+});
+
+async function selectWard(ward, btn) {
+  activeWard  = String(ward);
+  activeTract = null;
+  document.querySelectorAll('#ward-list .wd-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#tract-list .wd-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateFilter();
+  const w = allWardStats[ward];
+  if (w) updateSummaryCards(w.total, w.flagged, w.observed_vacant, `Ward ${ward}`);
+  await getWardGeo();
+  const b = wardBoundsIndex[String(ward)];
+  if (b && b.set && map) {
+    map.fitBounds([[b.minlng, b.minlat], [b.maxlng, b.maxlat]], {padding:50});
+  }
+}
+
+// ── Risk Level filter ─────────────────────────────────────────
+function buildRiskButtons() {
+  const container = document.getElementById('risk-list');
+  container.innerHTML = '';
+  const btn = document.createElement('button');
+  btn.className = 'wd-btn';
+  btn.dataset.tier = 'Top 1% (highest risk)';
+  btn.innerHTML = '<span style="display:inline-block;width:10px;height:10px;background:#7f0000;border-radius:2px;margin-right:6px;"></span>Top 1% (highest risk)';
+  container.appendChild(btn);
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-tier]');
+  if (!btn) return;
+  const tier = btn.dataset.tier;
+  if (activeRisk === tier) {
+    activeRisk = null;
+    document.querySelectorAll('[data-tier]').forEach(b => b.classList.remove('active'));
+  } else {
+    activeRisk = tier;
+    document.querySelectorAll('[data-tier]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  updateFilter();
+});
+
+document.getElementById('risk-clear').addEventListener('click', () => {
+  activeRisk = null;
+  document.querySelectorAll('[data-tier]').forEach(b => b.classList.remove('active'));
+  updateFilter();
+});
+
+// ── Census tract filter (lazy-loads flagged geojson) ──────────
+document.getElementById('tract-search').addEventListener('input', async function() {
+  const q = this.value.trim();
+  const container = document.getElementById('tract-list');
+  container.innerHTML = '';
+  if (!q) return;
+  await getFlaggedData();
+  Object.values(tractIndex)
+    .filter(t => t.tract.includes(q))
+    .sort((a,b) => b.flagged - a.flagged)
+    .slice(0, 15)
+    .forEach(t => {
+      const btn = document.createElement('button');
+      btn.className = 'wd-btn' + (activeTract === t.tract ? ' active' : '');
+      btn.textContent = t.tract;
+      btn.dataset.tract = t.tract;
+      btn.title = `Tract ${t.tract} — ${t.flagged} flagged`;
+      btn.addEventListener('click', () => selectTract(t.tract, btn));
+      container.appendChild(btn);
+    });
+});
+
+document.getElementById('tract-clear').addEventListener('click', () => {
+  activeTract = null;
+  document.getElementById('tract-search').value = '';
+  document.getElementById('tract-list').innerHTML = '';
+  updateFilter();
+});
+
+function selectTract(tract, btn) {
+  activeTract = String(tract);
+  activeWard  = null;
+  document.querySelectorAll('#ward-list .wd-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#tract-list .wd-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateFilter();
+  const t = tractIndex[String(tract)];
+  if (t && t.bounds && t.bounds.set && map) {
+    map.fitBounds([[t.bounds.minlng, t.bounds.minlat], [t.bounds.maxlng, t.bounds.maxlat]], {padding:50});
+  }
+}
+
+// ── MapLibre filter ───────────────────────────────────────────
+function updateFilter() {
+  if (!map || !map.getLayer('parcel-fill')) return;
+  let mapFilter = null;
+  if (activeWard && activeTract && activeRisk) {
+    mapFilter = ['all',
+      ['==', ['to-string', ['get', 'geographic_ward']], activeWard],
+      ['==', ['to-string', ['get', 'census_tract']], activeTract],
+      ['==', ['get', 'qtile_tier'], activeRisk]
+    ];
+  } else if (activeWard && activeTract) {
+    mapFilter = ['all',
+      ['==', ['to-string', ['get', 'geographic_ward']], activeWard],
+      ['==', ['to-string', ['get', 'census_tract']], activeTract]
+    ];
+  } else if (activeWard && activeRisk) {
+    mapFilter = ['all',
+      ['==', ['to-string', ['get', 'geographic_ward']], activeWard],
+      ['==', ['get', 'qtile_tier'], activeRisk]
+    ];
+  } else if (activeTract && activeRisk) {
+    mapFilter = ['all',
+      ['==', ['to-string', ['get', 'census_tract']], activeTract],
+      ['==', ['get', 'qtile_tier'], activeRisk]
+    ];
+  } else if (activeWard) {
+    mapFilter = ['==', ['to-string', ['get', 'geographic_ward']], activeWard];
+  } else if (activeTract) {
+    mapFilter = ['==', ['to-string', ['get', 'census_tract']], activeTract];
+  } else if (activeRisk) {
+    mapFilter = ['==', ['get', 'qtile_tier'], activeRisk];
+  }
+  map.setFilter('parcel-fill', mapFilter);
+  map.setFilter('parcel-line', mapFilter);
+}
+
+// ── Search (Option B: flagged parcels only) ───────────────────
+document.getElementById('search-btn').addEventListener('click', doSearch);
+document.getElementById('search-input').addEventListener('keydown', e => { if (e.key==='Enter') doSearch(); });
+
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim().toLowerCase();
+  if (!q) return;
+  const box = document.getElementById('search-results');
+  try {
+    const fc = await getFlaggedData();
+    const results = [];
+    for (const f of fc.features) {
+      const props = f.properties;
+      const pn   = String(props.parcel_number || '').toLowerCase();
+      const addr = String(props.address || '').toLowerCase();
+      if (pn.includes(q) || (addr && addr.includes(q))) {
+        const ring = f.geometry.coordinates[0];
+        let sx = 0, sy = 0;
+        ring.forEach(c => { sx += c[0]; sy += c[1]; });
+        results.push({ ...props, lat: sy / ring.length, lng: sx / ring.length });
+        if (results.length >= 15) break;
+      }
+    }
+    box.innerHTML = '';
+    if (!results.length) {
+      const empty = document.createElement('div');
+      empty.className = 'sri';
+      empty.innerHTML = '<div class="sri-meta">No flagged parcels match. Search covers the flagged subset only.</div>';
+      box.appendChild(empty);
+      box.style.display = 'block';
+      return;
+    }
+    results.forEach(pr => {
+      const div = document.createElement('div');
+      div.className = 'sri';
+      div.innerHTML = `
+        <div class="sri-parcel">${pr.parcel_number} <span style="color:var(--muted);font-weight:400;font-size:11px">${pr.address||''}</span></div>
+        <div class="sri-meta">${pr.qtile_tier||''} · Ward ${pr.geographic_ward||'N/A'} · ZIP ${pr.zip_code||'N/A'}</div>`;
+      div.addEventListener('click', () => {
+        box.style.display = 'none';
+        document.getElementById('search-input').value = pr.parcel_number;
+        if (popup) popup.remove();
+        const popupHtml = buildPopup(pr);
+        if (!map) return;
+        map.flyTo({ center: [pr.lng, pr.lat], zoom: 16 });
+        map.once('moveend', () => {
+          popup.setLngLat([pr.lng, pr.lat]).setHTML(popupHtml).addTo(map);
+        });
+      });
+      box.appendChild(div);
+    });
+    box.style.display = 'block';
+  } catch(e) { console.warn('Search failed:', e); }
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#search-results') && !e.target.closest('#search-box')) {
+    document.getElementById('search-results').style.display = 'none';
+  }
+});
+
+// ── Map mode badge ────────────────────────────────────────────
+function updateMapModeBadge() {
+  if (!map) return;
+  const z = map.getZoom();
+  const lbl  = document.getElementById('map-mode-label');
+  const desc = document.getElementById('map-mode-desc');
+  const lbl2  = document.getElementById('map-mode-label2');
+  const desc2 = document.getElementById('map-mode-desc2');
+  if (z >= 13) {
+    lbl.textContent = 'Parcel Risk Layer';
+    desc.textContent = 'Showing individual parcel colors';
+    lbl2.textContent = 'Parcel Risk Layer';
+    desc2.textContent = 'Click parcel for details';
+  } else {
+    lbl.textContent = 'Ward Choropleth';
+    desc.textContent = 'Zoom to 13+ for parcel layer';
+    lbl2.textContent = 'Ward Choropleth';
+    desc2.textContent = 'Zoom ≥ 13 for parcel markers';
+  }
+}
+
+// ── Sidebar bootstraps immediately, independent of PMTiles ────
+loadSummary();
+loadWards();
+buildRiskButtons();
+getWardGeo();
+
+// ── Map bootstraps on PMTiles header; failure is contained ────
+p.getHeader().then(() => {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      sources: {
+        carto: {
+          type: 'raster',
+          tiles: ['https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png',
+                  'https://b.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png'],
+          tileSize: 256, attribution: '© OpenStreetMap © CARTO'
+        },
+        carto_labels: {
+          type: 'raster',
+          tiles: ['https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png',
+                  'https://b.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'],
+          tileSize: 256
+        },
+        parcels: {
+          type: 'vector',
+          url: `pmtiles://${PMTILES_URL}`
+        }
+      },
+      layers: [{ id: 'carto-base', type: 'raster', source: 'carto' }]
+    },
+    center: [-75.145, 39.995],
+    zoom: 12,
+    minZoom: 10,
+    maxZoom: 18
+  });
+
+  map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
+
+  map.on('load', () => {
+    map.addSource('ward-choro', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+    map.addLayer({
+      id: 'ward-choro-fill', type: 'fill', source: 'ward-choro',
+      paint: {
+        'fill-color': ['get', 'color'],
+        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 14, 0]
+      }
+    });
+    map.addLayer({
+      id: 'ward-choro-line', type: 'line', source: 'ward-choro',
+      paint: {
+        'line-color': '#ffffff', 'line-width': 0.8,
+        'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.7, 14, 0]
+      }
+    });
+    map.addLayer({
+      id: 'parcel-fill', type: 'fill',
+      source: 'parcels', 'source-layer': 'parcels',
+      minzoom: 12,
+      paint: {
+        'fill-color': probColor,
+        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0, 13, probOpacity]
+      }
+    });
+    map.addLayer({
+      id: 'parcel-line', type: 'line',
+      source: 'parcels', 'source-layer': 'parcels',
+      minzoom: 13,
+      paint: { 'line-color': probColor, 'line-width': 0.5, 'line-opacity': 0.5 }
+    });
+    map.addLayer({ id: 'carto-labels', type: 'raster', source: 'carto_labels' });
+
+    loadWardChoro();
+    updateMapModeBadge();
+    map.on('zoom', updateMapModeBadge);
+
+    map.on('click', 'parcel-fill', e => {
+      const props = e.features[0].properties;
+      popup.setLngLat(e.lngLat).setHTML(buildPopup(props)).addTo(map);
+    });
+    map.on('mouseenter', 'parcel-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'parcel-fill', () => { map.getCanvas().style.cursor = ''; });
+
+    // Re-apply any filter the user set before the map finished loading
+    updateFilter();
+  });
+}).catch(err => {
+  console.error('PMTiles failed to load:', err);
+  const el = document.getElementById('map');
+  if (el) {
+    el.innerHTML =
+      '<div style="padding:40px;color:var(--red);font-family:var(--font-body);max-width:560px;line-height:1.55">' +
+      '<strong style="font-family:var(--font-head);font-size:14px;display:block;margin-bottom:8px">Map tiles unreachable.</strong>' +
+      'Could not load <code>' + PMTILES_URL + '</code>. The sidebar metrics still work — parcel-level map and click popups are unavailable.' +
+      '</div>';
+  }
+});
+
+// ── Ward chart ────────────────────────────────────────────────
+function renderWardChart(top10) {
+  const ctx = document.getElementById('tier-chart').getContext('2d');
+  if (wardChart) wardChart.destroy();
+  wardChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: top10.map(w => 'Wd ' + w.ward),
+      datasets: [{
+        data: top10.map(w => w.flagged),
+        backgroundColor: top10.map(w => {
+          const r = w.total > 0 ? w.flagged/w.total : 0;
+          return r >= 0.04 ? '#7f0000' : r >= 0.02 ? '#cc3000' : r >= 0.01 ? '#f3c613' : '#96c9ff';
+        }),
+        borderRadius: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.parsed.y} flagged` } }
+      },
+      scales: {
+        x: { ticks: { font: { size: 9, family: 'Open Sans' } }, grid: { display: false } },
+        y: { ticks: { font: { size: 9, family: 'Open Sans' } } }
+      }
+    }
+  });
+}
+
+// ── About modal ───────────────────────────────────────────────
+document.getElementById('about-btn').addEventListener('click', () => {
+  document.getElementById('aboutModal').classList.add('open');
+});
+document.getElementById('modal-close-btn').addEventListener('click', () => {
+  document.getElementById('aboutModal').classList.remove('open');
+});
+document.getElementById('modal-close-btn2').addEventListener('click', () => {
+  document.getElementById('aboutModal').classList.remove('open');
+});
+</script>
+</body>
+</html>
