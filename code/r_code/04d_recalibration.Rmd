@@ -3,9 +3,6 @@ title: "PhillyStat360 — 04d: Recalibration on a held-out fold (R port)"
 output: html_document
 ---
 
-R port of `code/python/04d_recalibration.ipynb`. Refits isotonic on a held-out
-half of the test split.
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```

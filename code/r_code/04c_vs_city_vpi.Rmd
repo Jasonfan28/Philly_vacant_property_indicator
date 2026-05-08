@@ -3,10 +3,6 @@ title: "PhillyStat360 — 04c: Final Model vs. City of Philadelphia VPI (R port)
 output: html_document
 ---
 
-R port of `code/python/04c_vs_city_vpi.ipynb`. Compares our final ensemble
-(`ensemble_prob` from 04a) against Philadelphia's Vacant Property Indicator
-(VPI) layer — building maps with `leaflet` instead of `folium`.
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```

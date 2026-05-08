@@ -3,10 +3,6 @@ title: "PhillyStat360 — 04f: Per-parcel explanations (TreeSHAP, R port)"
 output: html_document
 ---
 
-R port of `code/python/04f_local_explanations.ipynb`. Generates per-parcel
-SHAP-like contributions for the top-N flagged parcels using the `treeshap`
-package (R analog of Python's `shap.TreeExplainer`).
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```

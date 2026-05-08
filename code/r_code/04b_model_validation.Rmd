@@ -3,8 +3,6 @@ title: "PhillyStat360 — 04b: Model Validation (R port)"
 output: html_document
 ---
 
-R port of `code/python/04b_model_validation.ipynb`.
-
 Extends 04a with:
 
 1. **Spatial CV** by ZIP (`group_vfold_cv` from `rsample`).

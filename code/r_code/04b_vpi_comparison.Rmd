@@ -3,10 +3,6 @@ title: "PhillyStat360 — 04b: VPI Comparison & Spatial Analysis (R port)"
 output: html_document
 ---
 
-R port of `code/python/04b_vpi_comparison.ipynb`. Joins predictions to OPA
-metadata, reports per-ZIP and per-building-type AUC, ward-level summaries,
-and an equity audit by census-tract median household income.
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```

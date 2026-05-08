@@ -7,16 +7,18 @@ A machine learning pipeline that predicts vacant property risk across Philadelph
 ## Repository Layout
 
 ```
-code/r_code/        Full R Markdown pipeline. Steps 00 through 06.
-code/outputs/       Rendered HTML reports plus a handful of standalone PNGs
-                    used in early-stage EDA write-ups.
-code/03_*_files/    Auto-generated figure folders from knitting the Rmd files.
-graphs/             Headline figures used across documentation.
-graphs/python/      Modeling and validation figures. The folder name is
-                    historical — every file in it is now produced by the R
-                    pipeline.
-website/            Static dashboard, landing page, PMTiles, ward GeoJSON, and
-                    the optional local Flask backend (tileserver.py + load_db.py).
+code/r_code/             Full R Markdown pipeline. Steps 00 through 06.
+docs/code/outputs/       Rendered HTML reports plus a handful of standalone
+                         PNGs used in early-stage EDA write-ups.
+docs/code/03_*_files/    Auto-generated figure folders from knitting the Rmd files.
+docs/graphs/             Headline figures used across documentation.
+docs/graphs/python/      Modeling and validation figures. The folder name is
+                         historical — every file in it is now produced by the R
+                         pipeline.
+docs/                    Static dashboard, landing page, PMTiles, ward GeoJSON,
+                         and the optional local Flask backend
+                         (tileserver.py + load_db.py). Served as the GitHub Pages
+                         root.
 ```
 
 ## Pipeline Overview
@@ -49,7 +51,7 @@ website/            Static dashboard, landing page, PMTiles, ward GeoJSON, and
 05_output_analysis      probability summaries, ZCTA choropleth, capacity lookup
 06_tiling               PMTiles vector tilesets for web consumption
 
-── Public-facing surface (in website/) ──────────────────────────────────────
+── Public-facing surface (in docs/) ─────────────────────────────────────────
 Vacancy Risk Landing Page.html    project landing page
 PhillyStat360 v2.html             full methodology write-up
 dashboard.html                    interactive parcel-level dashboard
@@ -65,7 +67,7 @@ The whole pipeline is R Markdown end to end and lives in `code/r_code/`. Modelin
 
 The early steps (00 to 03_3) load raw OpenDataPhilly extracts, validate quality, define the outcome variable, and engineer the feature matrix. They are run once whenever raw inputs change. They produce two flat tables that downstream steps consume:
 
-- `data/ovs_residential.csv`. Around 352K residential parcels with the OVS label and source flags.
+- `data/ovs_residential.csv`. Around 522K residential parcels with the OVS label and source flags.
 - `data/features_residential.csv`. The same parcels with around 80 engineered features.
 
 Each Rmd reads its inputs from `data/` or `data_py/`, writes outputs back to `data_py/`, and knits a self-contained HTML rendering next to itself. The files have a strict left-to-right dependency. 04a fits the four base learners and the calibrated ensemble. 04b through 04h consume those fitted artefacts for validation. 05 produces the stakeholder-facing summaries, and 06 turns the parcel GeoJSON into PMTiles for the website.
@@ -127,9 +129,9 @@ All 54 violation codes whose title or definition text contains the word "vacant"
 
 A key finding falls out of this. Clean & Seal dominates the label. The model will largely learn to predict which properties the city has already physically boarded up, plus catch earlier-stage signals for properties that have not yet reached that point.
 
-![OVS class balance](graphs/ovs_class_balance.png)
+![OVS class balance](docs/graphs/ovs_class_balance.png)
 
-![OVS source combinations](graphs/ovs_combination_plot.png)
+![OVS source combinations](docs/graphs/ovs_combination_plot.png)
 
 ---
 
@@ -181,21 +183,21 @@ Box plots and summary statistics compare vacant against occupied parcels across:
 
 These differences validate that the administrative OVS label corresponds to physical deterioration signals in OPA assessment data, confirming the outcome is measuring what we think it is.
 
-![Exterior condition by OVS](code/outputs/exteriorcondition.png)
+![Exterior condition by OVS](docs/code/outputs/exteriorcondition.png)
 
-![Year built by OVS](code/outputs/year_built.png)
+![Year built by OVS](docs/code/outputs/year_built.png)
 
-![Market value by OVS](code/outputs/market_ovs.png)
+![Market value by OVS](docs/code/outputs/market_ovs.png)
 
-![OPA category by OVS](code/outputs/opa_cat.png)
+![OPA category by OVS](docs/code/outputs/opa_cat.png)
 
 #### 3.4 Spatial summary by ZIP code
 
 Vacancy rates are computed per ZIP code and ranked. Rates range from around 0.3 percent in newer or wealthier areas to around 17 percent in areas with concentrated disinvestment. The large spatial variation confirms that vacancy is not randomly distributed. It clusters geographically. This finding directly motivated the spatial cross-validation work in step 8.
 
-![ZIP-level OVS rates](code/outputs/zip_summary.png)
+![ZIP-level OVS rates](docs/code/outputs/zip_summary.png)
 
-![Vacant parcels map](code/outputs/vacant_parcels_map.png)
+![Vacant parcels map](docs/code/outputs/vacant_parcels_map.png)
 
 #### 3.5 Three case-study parcel drill-downs
 
@@ -256,9 +258,9 @@ The four included categories are.
 
 Geometry from `PWD_PARCELS.geojson` is joined to attach `bldg_desc` (building description from the parcel layer), `shape_area`, and `shape_length`. Geometry is dropped on export since downstream files work with flat tables, but `bldg_desc` is retained. It gets used in `03_3_Features.Rmd` to filter parking garages.
 
-**Output.** `data/ovs_residential.csv`. Around 352K residential parcels with an OVS-equal-one rate of around 1.1 percent.
+**Output.** `data/ovs_residential.csv`. Around 522K residential parcels with an OVS-equal-one rate of around 1.1 percent.
 
-![OVS source overlap on residential parcels](code/03_1_Ovs_files/figure-html/ovs-overlap-plot-1.png)
+![OVS source overlap on residential parcels](docs/code/03_1_Ovs_files/figure-html/ovs-overlap-plot-1.png)
 
 ---
 
@@ -296,7 +298,7 @@ Vacancy rates are computed for each exterior condition rating (1 for New or Exce
 
 A violin plot was initially used here, but Fichman pushed back. Exterior condition is an ordered categorical variable, not continuous. Bar charts are more honest about the discrete scale.
 
-![Vacancy rate by exterior condition](graphs/exterior_condition_vacancy_rate.png)
+![Vacancy rate by exterior condition](docs/graphs/exterior_condition_vacancy_rate.png)
 
 #### 5.5 EDA, new-construction false positive check
 
@@ -308,7 +310,7 @@ Mean violation counts in four windows (all-time, five-year, three-year, six-mont
 
 The key finding is that OVS-equal-one parcels have consistently higher violation counts across every window. The gap narrows in the six-month window, suggesting that acute recent activity is a weaker signal than long-term chronic history. This validates the life-history features engineered in step 6.
 
-![Violation history faceted by OVS](graphs/violations_faceted_by_ovs.png)
+![Violation history faceted by OVS](docs/graphs/violations_faceted_by_ovs.png)
 
 #### 5.7 Baseline logistic regression (OPA fields only)
 
@@ -320,9 +322,9 @@ A logistic regression is fit using only four OPA property fields (exterior condi
 
 The Youden-optimal threshold is found from the ROC curve. A probability density plot overlays the predicted score distributions for OVS-equal-zero and OVS-equal-one parcels. Visible overlap in the middle range indicates room for improvement. The confusion matrix and odds ratios are reported.
 
-![Baseline ROC curve](code/03_2_Analysis_files/figure-html/baseline-roc-1.png)
+![Baseline ROC curve](docs/code/03_2_Analysis_files/figure-html/baseline-roc-1.png)
 
-![Baseline predicted probability distribution](graphs/baseline_prob_distribution.png)
+![Baseline predicted probability distribution](docs/graphs/baseline_prob_distribution.png)
 
 **Outputs.** `data/building_tier_mapping.csv` and `data/vacancy_keyword_codes.csv`.
 
@@ -336,7 +338,7 @@ This is the largest and most complex file. It transforms seven raw data sources 
 
 #### 6.1 Load all sources and define the training-cutoff windows
 
-Five time windows are defined relative to `TRAIN_CUTOFF = 2025-10-01`.
+Four time windows are defined relative to `TRAIN_CUTOFF = 2025-10-01`.
 
 | Window name | Definition | Purpose |
 |---|---|---|
@@ -480,9 +482,9 @@ A summary table shows every feature with its missing-value count and percentage,
 
 Pearson correlations between each numeric feature and `ovs` are computed and the top 20 by absolute value are plotted. This acts as a quick sanity check. The top features should be conceptually sensible vacancy indicators (violation counts, C&S history, license flags).
 
-![Top 20 univariate correlations](graphs/univariate_correlation.png)
+![Top 20 univariate correlations](docs/graphs/univariate_correlation.png)
 
-**Output.** `data/features_residential.csv`. Around 352K parcels by 80-plus columns.
+**Output.** `data/features_residential.csv`. Around 522K parcels by 80-plus columns.
 
 ---
 
@@ -530,9 +532,9 @@ Every base learner is wrapped in a `recipes` recipe with the same three steps in
 
 OVS prevalence sits at around 1.1 percent. Without correction, models tend to drive themselves toward the majority class. ROSE rebalances the training data before the model is fit. Class-weight tuning (described below) provides a complementary lever inside the model itself.
 
-![ROSE versus no subsampling](graphs/python/rose_subsampling_comparison.png)
+![ROSE versus no subsampling](docs/graphs/python/rose_subsampling_comparison.png)
 
-![Train versus test density check for overfitting](graphs/python/overfit_check_density.png)
+![Train versus test density check for overfitting](docs/graphs/python/overfit_check_density.png)
 
 #### 7.4 Four base learners
 
@@ -560,9 +562,9 @@ Isotonic regression is fit on the test set predictions of the raw ensemble. Vaca
 
 This calibration choice has an important implication for downstream consumers. Calibrated probabilities should never be compared to a fixed threshold like 0.5 because almost nothing will exceed it. The right way to use the score for inspection triage is `ensemble_flag` (top one percent by raw rank) or `qtile_tier` (a five-bucket rank).
 
-![Calibration curve for the ensemble](graphs/python/calibration_curve.png)
+![Calibration curve for the ensemble](docs/graphs/python/calibration_curve.png)
 
-![Calibrated versus raw probability distributions](graphs/python/cal_vs_raw_distribution.png)
+![Calibrated versus raw probability distributions](docs/graphs/python/cal_vs_raw_distribution.png)
 
 #### 7.6 Headline test-set metrics
 
@@ -575,13 +577,13 @@ Test-set numbers reported on the random 30 percent holdout are:
 
 Variable importance from the Random Forest is plotted as a top-20 bar chart. C&S history, vacancy license history, violation trajectories, and recency signals dominate the top of the chart. The newer RTT features (`had_sheriff_sale`, `log_price_change`) appear in the top half when they carry independent signal.
 
-![ROC curves for all four base models](graphs/python/roc_all_models.png)
+![ROC curves for all four base models](docs/graphs/python/roc_all_models.png)
 
-![Random Forest variable importance, top 20](graphs/python/rf_variable_importance.png)
+![Random Forest variable importance, top 20](docs/graphs/python/rf_variable_importance.png)
 
-![Threshold sensitivity precision and recall](graphs/python/threshold_sensitivity.png)
+![Threshold sensitivity precision and recall](docs/graphs/python/threshold_sensitivity.png)
 
-![Five-tier probability distribution](graphs/python/tier_distribution.png)
+![Five-tier probability distribution](docs/graphs/python/tier_distribution.png)
 
 #### 7.7 Outputs from 04a
 
@@ -621,7 +623,7 @@ A per-fold line chart shows AUC and J-Index across the ten folds. High variance 
 
 **Result.** Spatial CV mean AUC is **0.8877 plus or minus 0.0064** across the ten folds. This is the lower-bound, conservative AUC for the RF component without ensemble calibration.
 
-![Spatial CV per-fold AUC and J-Index](graphs/python/spatial_cv_performance.png)
+![Spatial CV per-fold AUC and J-Index](docs/graphs/python/spatial_cv_performance.png)
 
 #### 8.2 Leave-One-ZIP-Out (LOGO) cross-validation
 
@@ -629,7 +631,7 @@ LOGO takes the spatial CV to its extreme. Each of Philadelphia's residential ZIP
 
 Per-ZIP AUC results are plotted as a ranked bar chart. ZIPs with AUC less than 0.70 would be highlighted in red as candidates for manual review. In the most recent run none of the sampled ZIPs fall below that line, with median AUC of 0.95 and above. The mean LOGO AUC is **0.8849**, very close to the 10-fold spatial CV result.
 
-![LOGO AUC by held-out ZIP](graphs/python/logo_cv_by_zip.png)
+![LOGO AUC by held-out ZIP](docs/graphs/python/logo_cv_by_zip.png)
 
 LOGO matters for deployment. If the city ever applies the model to newly annexed areas, or if future data includes ZIPs not well represented in the training window, LOGO CV predicts how well the model will perform in those situations.
 
@@ -657,9 +659,9 @@ The summary statistics from the most recent run are.
 
 Two diagnostic plots are produced. Mean CI width versus predicted probability, and CI width distribution split by OVS-equal-zero versus OVS-equal-one.
 
-![Prediction confidence interval analysis](graphs/python/prediction_ci_analysis.png)
+![Prediction confidence interval analysis](docs/graphs/python/prediction_ci_analysis.png)
 
-![04b feature importance reproduction](graphs/python/rf_vip_04b.png)
+![04b feature importance reproduction](docs/graphs/python/rf_vip_04b.png)
 
 #### 8.4 Sanity checks
 
@@ -698,9 +700,9 @@ Per-ZIP AUC distribution is.
 
 The model's overall ROC ranking quality survives the ZIP-by-ZIP cut. Operational decisions can apply the score citywide rather than carving out low-AUC pockets.
 
-![AUC by ZIP code](graphs/python/auc_by_zip.png)
+![AUC by ZIP code](docs/graphs/python/auc_by_zip.png)
 
-![Equity flag rate versus observed vacancy by ZIP](graphs/python/equity_zip_scatter.png)
+![Equity flag rate versus observed vacancy by ZIP](docs/graphs/python/equity_zip_scatter.png)
 
 #### 9.3 AUC by building type
 
@@ -733,7 +735,7 @@ Philadelphia's 66 political wards are used as an aggregation unit. For each ward
 
 Ward summaries are useful because wards are the unit many City of Philadelphia operational workflows already use. Per-ward rollups make outputs directly actionable for field operations teams.
 
-![Mean predicted probability by ward](graphs/python/ward_mean_prob.png)
+![Mean predicted probability by ward](docs/graphs/python/ward_mean_prob.png)
 
 #### 9.6 Equity audit by census-tract income quintile
 
@@ -751,7 +753,7 @@ The headline finding from the equity audit is that AUC is consistent across all 
 
 The model concentrates absolute flag counts in lower-income areas because vacancy is genuinely concentrated there. It does so without sacrificing per-ZIP or per-quintile ranking quality.
 
-![AUC by census-tract income quintile](graphs/python/equity_income_quintile.png)
+![AUC by census-tract income quintile](docs/graphs/python/equity_income_quintile.png)
 
 **Outputs.** `data_py/predictions_04b.csv` parcel frame, `data_py/zip_auc_04b.csv` per-ZIP AUC, `data_py/ward_summary_04b.csv` per-ward rollup, `data_py/equity_income_auc.csv` equity audit, plus a static ZCTA choropleth and an interactive Leaflet map.
 
@@ -779,7 +781,7 @@ The two flag sets are compared at matched prevalence. The ensemble probability i
 
 The continuous-score view tells the same story more cleanly. Ensemble AUC against the OVS label is **0.9786**. VPI as a binary flag has an AUC of **0.7849**. Ensemble average precision is **0.7538**. VPI average precision is **0.3116**. The model identifies vacancy with substantially better ranking quality than the binary VPI at the same flag volume.
 
-![Ensemble versus VPI ROC and PR curves](graphs/python/vs_city_vpi_roc_pr.png)
+![Ensemble versus VPI ROC and PR curves](docs/graphs/python/vs_city_vpi_roc_pr.png)
 
 #### 10.3 Four-bucket disagreement analysis
 
@@ -794,21 +796,21 @@ Every parcel falls into one of four buckets based on the two flags.
 
 The "only ours" bucket has substantially higher observed vacancy than the "only VPI" bucket, which suggests the model's exclusive flags are higher quality on average than the VPI's exclusive flags.
 
-![Four-bucket disagreement summary](graphs/python/vs_city_vpi_buckets.png)
+![Four-bucket disagreement summary](docs/graphs/python/vs_city_vpi_buckets.png)
 
-![Disagreement map snapshot](graphs/python/vs_city_vpi_map.png)
+![Disagreement map snapshot](docs/graphs/python/vs_city_vpi_map.png)
 
 #### 10.4 Per-ZIP precision scatter
 
 Per-ZIP precision is computed for both approaches and plotted as a scatter (City VPI on the x-axis, ensemble on the y-axis, one point per ZIP with at least 50 parcels). The model achieves higher precision than VPI in around 30 of the 41 ZIPs, sometimes by a wide margin.
 
-![Per-ZIP precision scatter, ensemble vs VPI](graphs/python/vs_city_vpi_zip_scatter.png)
+![Per-ZIP precision scatter, ensemble vs VPI](docs/graphs/python/vs_city_vpi_zip_scatter.png)
 
 #### 10.5 High-probability OVS-equal-zero candidates
 
 A separate analysis isolates the top 339 parcels with the highest ensemble probability that have OVS-equal-zero. Twenty-seven of those also appear in the City VPI, which is independent corroboration that the parcel is genuinely vacant despite OVS missing it. The remaining 312 parcels are candidate false positives or genuinely undetected vacants. They are exported with their addresses for inspector review.
 
-![High-probability OVS-equal-zero candidate map](graphs/python/vs_city_vpi_high_prob_ovs0_map.png)
+![High-probability OVS-equal-zero candidate map](docs/graphs/python/vs_city_vpi_high_prob_ovs0_map.png)
 
 **Outputs.** `data_py/vs_city_vpi_headline.csv`, `data_py/vs_city_vpi_buckets.csv`, `data_py/vs_city_vpi_zip.csv`, `data_py/vs_city_vpi_parcel.csv`, `data_py/vs_city_vpi_map.html` (interactive overlay of all three buckets), and `data_py/vs_city_vpi_high_prob_ovs0_map.html` (the candidate review map).
 
@@ -836,7 +838,7 @@ The new calibrator is applied to the full population, producing `ensemble_prob_v
 
 The reliability curves both follow the diagonal, but the recalibrated version stays closer to it across all probability bins.
 
-![Reliability curve, original versus recalibrated](graphs/python/recalibration_reliability.png)
+![Reliability curve, original versus recalibrated](docs/graphs/python/recalibration_reliability.png)
 
 The practical takeaway is that the original calibrator was already nearly correct. The recommendation for production dashboards is to use `ensemble_prob_v2`, but the substantive difference is small enough that consumers already on `ensemble_prob` do not need to migrate urgently.
 
@@ -868,9 +870,9 @@ The model achieves the highest precision per parcel inspected. The union strateg
 
 A per-ward scatter (City VPI precision on the x-axis, model precision on the y-axis) shows wide variance across wards. Some wards reach perfect or near-perfect precision under the model's flagging policy, while others land in the 0.3 to 0.5 range. It flags wards where precision falls below a configurable threshold for individual review.
 
-![Operational precision at one percent ward capacity](graphs/python/operational_precision_at_capacity.png)
+![Operational precision at one percent ward capacity](docs/graphs/python/operational_precision_at_capacity.png)
 
-![Capacity threshold curve](graphs/python/capacity_threshold_curve.png)
+![Capacity threshold curve](docs/graphs/python/capacity_threshold_curve.png)
 
 **Outputs.** `data_py/operational_flags_by_ward.csv` per-ward summary, `data_py/operational_precision_at_capacity.csv` headline citywide table, and the per-ward precision scatter PNG.
 
@@ -901,9 +903,9 @@ A bar chart of the top 15 features by mean absolute SHAP across the top 200 parc
 
 A useful pattern that appears in the local explanations is that some neighborhood-level features push downward at flagged parcels. A high count of vacant parcels in the same ZIP can lower the ensemble probability for a specific parcel, presumably because the model already accounts for the neighborhood baseline elsewhere and an individual parcel in a high-vacancy ZIP is comparatively less risky than a parcel that looks unusual within its ZIP.
 
-![Top SHAP drivers for flagged parcels](graphs/python/shap_summary_topflags.png)
+![Top SHAP drivers for flagged parcels](docs/graphs/python/shap_summary_topflags.png)
 
-**Outputs.** `data_py/parcel_shap_topflags.csv` (1,000 rows of parcel by top-five-feature explanations) and `graphs/python/shap_summary_topflags.png`.
+**Outputs.** `data_py/parcel_shap_topflags.csv` (1,000 rows of parcel by top-five-feature explanations) and `docs/graphs/python/shap_summary_topflags.png`.
 
 ---
 
@@ -929,9 +931,9 @@ The OVS rates differ by an order of magnitude between the two cohorts, which by 
 
 The model's discrimination is actually higher on the new cohort, where the recent administrative trail is rich. The Brier score on the new cohort is larger in absolute terms because the prevalence is roughly twenty times higher, but the calibration ratio is good. There is no evidence of temporal decay between the older and newer activity windows.
 
-![Temporal validation, old versus new cohort](graphs/python/temporal_validation.png)
+![Temporal validation, old versus new cohort](docs/graphs/python/temporal_validation.png)
 
-**Outputs.** `data_py/temporal_validation.csv` and `graphs/python/temporal_validation.png`.
+**Outputs.** `data_py/temporal_validation.csv` and `docs/graphs/python/temporal_validation.png`.
 
 ---
 
@@ -963,9 +965,9 @@ The block-CV AUC sits between the random split and the ZIP-blocked CV results, w
 
 The 04h estimate of around 0.97 is the right number to put on a stakeholder slide as the honest, leakage-controlled AUC for the Random Forest component.
 
-![Block CV AUC by fold](graphs/python/block_cv_rf_aucs.png)
+![Block CV AUC by fold](docs/graphs/python/block_cv_rf_aucs.png)
 
-**Outputs.** `data_py/block_cv_rf.csv` and `graphs/python/block_cv_rf_aucs.png`.
+**Outputs.** `data_py/block_cv_rf.csv` and `docs/graphs/python/block_cv_rf_aucs.png`.
 
 ---
 
@@ -991,7 +993,7 @@ A density plot of `rf_prob` is drawn per category, filtered to `rf_prob` greater
 
 The `rf_prob > 0` filter is threshold-free. It does not declare any parcel vacant or not vacant. It simply removes parcels where every tree in the 500-tree forest voted occupied. These are the model's most confident negative predictions and do not need to appear in a distribution plot.
 
-![Probability distribution by category](graphs/python/prob_distribution_by_category.png)
+![Probability distribution by category](docs/graphs/python/prob_distribution_by_category.png)
 
 #### 16.4 Mean probability bar plus five-tier stack
 
@@ -1002,21 +1004,21 @@ Two charts are stacked vertically.
 
 The 0.0 to 0.2, 0.2 to 0.4, and so on equal-width tiers from VacancyGuide are still used in the operational five-tier rollups in step 9 and the tier badges in step 7. The log-spaced breaks here are for within-category visualization where almost all non-zero predictions fall below 20 percent.
 
-![Mean predicted probability by category](graphs/python/mean_prob_by_category.png)
+![Mean predicted probability by category](docs/graphs/python/mean_prob_by_category.png)
 
-![Five-tier distribution by category](graphs/python/five_tier_distribution.png)
+![Five-tier distribution by category](docs/graphs/python/five_tier_distribution.png)
 
 #### 16.5 Category calibration scatter
 
 For each category with at least 200 parcels, mean predicted probability is plotted against observed vacancy rate, with point size proportional to parcel count. Points on the 45 degree diagonal are perfectly calibrated. Points above the diagonal indicate under-prediction (observed rate higher than predicted). Points below indicate over-prediction.
 
-![Category calibration scatter](graphs/python/category_calibration.png)
+![Category calibration scatter](docs/graphs/python/category_calibration.png)
 
 #### 16.6 ZIP code summary and bar chart
 
 Mean predicted probability and observed OVS rate are computed per ZIP and ranked. The horizontal bar chart shows bars for predicted probability with observed rate overlaid as diamond markers. ZIP 19132 has the highest mean predicted probability at around 3.61 percent. ZIP 19137 has the lowest at around 0.85 percent.
 
-![Mean predicted probability by ZIP](graphs/python/zip_mean_prob_bar.png)
+![Mean predicted probability by ZIP](docs/graphs/python/zip_mean_prob_bar.png)
 
 #### 16.7 ZCTA choropleth and interactive Leaflet map
 
@@ -1024,7 +1026,7 @@ Mean predicted probability and observed OVS rate are computed per ZIP and ranked
 
 ZCTA boundaries are used rather than `PWD_PARCELS.geojson` for the static map because the parcel file is over 400 MB and consistently causes the R session to run out of memory or render at unusable resolutions. The parcel-resolution map lives separately in step 17 as a vector tileset that the browser handles efficiently.
 
-![ZCTA choropleth of mean P(vacant)](graphs/python/spatial_zip_choropleth.png)
+![ZCTA choropleth of mean P(vacant)](docs/graphs/python/spatial_zip_choropleth.png)
 
 #### 16.8 Capacity-based threshold lookup
 
@@ -1037,7 +1039,7 @@ When `PWD_PARCELS.geojson` is available, this step writes two GeoJSON files for 
 - `data_py/vacancy_predictions.geojson`. Around 436K parcels, around 405 MB. All prediction columns plus all feature metadata.
 - `data_py/vacancy_predictions_flagged.geojson`. Around 4,500 parcels (top one percent flagged), around 3.9 MB. Same column set, smaller geometry.
 
-**Outputs.** `data_py/output_zip_summary.csv`, `data_py/output_category_summary.csv`, `data_py/capacity_threshold_curve.csv`, `data_py/vacancy_risk_map.html`, plus the two GeoJSON files and a folder of static PNGs under `graphs/python/`.
+**Outputs.** `data_py/output_zip_summary.csv`, `data_py/output_category_summary.csv`, `data_py/capacity_threshold_curve.csv`, `data_py/vacancy_risk_map.html`, plus the two GeoJSON files and a folder of static PNGs under `docs/graphs/python/`.
 
 ---
 
@@ -1164,7 +1166,7 @@ The following are the artefacts that downstream consumers (dashboards, GIS layer
 
 #### Geospatial and interactive outputs
 
-- `vacancy_risk_map.html`. Interactive folium ZCTA-level map.
+- `vacancy_risk_map.html`. Interactive Leaflet ZCTA-level map.
 - `vacancy_predictions.geojson`. Around 436K parcel polygons with all predictions.
 - `vacancy_predictions_flagged.geojson`. Around 4,500 flagged parcels with all predictions.
 - `tiles/vacancy_flagged.pmtiles`. Around 2.2 MB. Top one percent.
@@ -1176,16 +1178,16 @@ The following are the artefacts that downstream consumers (dashboards, GIS layer
 
 ## Website and Dashboard
 
-Everything that gets handed to a non-technical audience lives in [`website/`](website/). The folder is fully static, ships with a graceful fallback for the Flask backend, and is designed to be pushed to GitHub Pages or any static host without modification.
+Everything that gets handed to a non-technical audience lives in [`docs/`](docs/). The folder is fully static, ships with a graceful fallback for the Flask backend, and is designed to be pushed to GitHub Pages or any static host without modification.
 
 ### Public-facing pages
 
 | File | Purpose |
 |---|---|
-| [`website/index.html`](website/index.html) | Tiny redirect that drops visitors onto the landing page |
-| [`website/Vacancy Risk Landing Page.html`](website/Vacancy%20Risk%20Landing%20Page.html) | Project landing page. The "what this is and why it matters" surface for stakeholders |
-| [`website/PhillyStat360 v2.html`](website/PhillyStat360%20v2.html) | Full methodology write-up. Mirrors the step-by-step structure of this README in a presentation-ready layout |
-| [`website/dashboard.html`](website/dashboard.html) | Interactive parcel-level dashboard. MapLibre + PMTiles vector parcels, SHAP risk drivers per parcel, ward choropleth, sidebar summary cards, ward filter, and parcel search |
+| [`docs/index.html`](docs/index.html) | Tiny redirect that drops visitors onto the landing page |
+| [`docs/Vacancy Risk Landing Page.html`](docs/Vacancy%20Risk%20Landing%20Page.html) | Project landing page. The "what this is and why it matters" surface for stakeholders |
+| [`docs/PhillyStat360 v2.html`](docs/PhillyStat360%20v2.html) | Full methodology write-up. Mirrors the step-by-step structure of this README in a presentation-ready layout |
+| [`docs/dashboard.html`](docs/dashboard.html) | Interactive parcel-level dashboard. MapLibre + PMTiles vector parcels, SHAP risk drivers per parcel, ward choropleth, sidebar summary cards, ward filter, and parcel search |
 
 ### Data shipped with the dashboard
 
@@ -1203,7 +1205,7 @@ The dashboard needs a small set of static files alongside the HTML. Each file is
 
 ### Static vs. local-server mode
 
-`dashboard.html` auto-detects the host. On `localhost` or `127.0.0.1` it tries the local Flask backend first ([`website/tileserver.py`](website/tileserver.py), backed by PostgreSQL/PostGIS via [`website/load_db.py`](website/load_db.py)). On any other host it skips the backend entirely and falls back to the JSON files above.
+`dashboard.html` auto-detects the host. On `localhost` or `127.0.0.1` it tries the local Flask backend first ([`docs/tileserver.py`](docs/tileserver.py), backed by PostgreSQL/PostGIS via [`docs/load_db.py`](docs/load_db.py)). On any other host it skips the backend entirely and falls back to the JSON files above.
 
 | Feature | Local-server mode | Static mode |
 |---|---|---|
@@ -1221,21 +1223,19 @@ The local Flask backend is optional. It exists for the case where the city wants
 
 ### Deployment
 
-Full GitHub Pages deployment notes live in [`website/DEPLOY.md`](website/DEPLOY.md). The short version is:
+Full GitHub Pages deployment notes live in [`docs/DEPLOY.md`](docs/DEPLOY.md). The short version is:
 
 ```bash
-cd website
-git init -b main
-git add .gitignore .nojekyll .
-git commit -m "Initial commit"
-git remote add origin git@github.com:<you>/<repo>.git
-git push -u origin main
-# Settings → Pages → Source: Deploy from a branch, main / (root)
+# From the repo root, push the docs/ folder along with everything else:
+git add docs/
+git commit -m "Update site"
+git push origin main
+# Settings → Pages → Source: Deploy from a branch, main / docs
 ```
 
 The two PMTiles files stay in the repo as ordinary objects rather than Git LFS, because GitHub Pages does not serve LFS objects through its CDN. The largest file (`vacancy_predictions.pmtiles`, around 46 MB) sits comfortably under GitHub's 100 MB per-file limit. To host the tilesets on S3, Cloudflare R2, or any other static bucket instead, set the `PMTILES_URL` constant at the top of the `<script>` block in `dashboard.html` to the absolute URL — the PMTiles JS reader will stream byte ranges over HTTP.
 
-[`website/sync_methodology_assets.sh`](website/sync_methodology_assets.sh) copies the latest figures from `graphs/` and `code/outputs/` into the methodology page so the public write-up stays in sync with the modeling pipeline.
+[`docs/sync_methodology_assets.sh`](docs/sync_methodology_assets.sh) copies the latest figures from `docs/graphs/` and `docs/code/outputs/` into the methodology page so the public write-up stays in sync with the modeling pipeline.
 
 ---
 

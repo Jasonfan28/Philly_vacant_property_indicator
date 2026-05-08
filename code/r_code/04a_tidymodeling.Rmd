@@ -3,11 +3,6 @@ title: "PhillyStat360 — 04a: tidymodeling (R port from Python notebook)"
 output: html_document
 ---
 
-R port of `code/python/04a_tidymodeling.ipynb`. Consumes
-`PhillyStat360/data/features_residential.csv` (the output of `03_3_Features.Rmd`)
-and writes all artifacts to `PhillyStat360/data_py/` (kept name for downstream
-compatibility, even though this is R output).
-
 **Library mapping (Python → R)**
 
 - `sklearn.pipeline` → `recipes` + `workflows`

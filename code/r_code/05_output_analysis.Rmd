@@ -3,9 +3,6 @@ title: "PhillyStat360 — 05: Output Analysis (R port)"
 output: html_document
 ---
 
-R port of `code/python/05_output_analysis.ipynb`. Stakeholder-facing analysis
-of the final ensemble predictions.
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```

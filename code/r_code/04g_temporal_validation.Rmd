@@ -3,10 +3,6 @@ title: "PhillyStat360 — 04g: Temporal validation (R port)"
 output: html_document
 ---
 
-R port of `code/python/04g_temporal_validation.ipynb`. Splits parcels by
-violation recency and reports AUC + observed vs predicted vacancy on each
-cohort as a proxy for temporal generalization.
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```

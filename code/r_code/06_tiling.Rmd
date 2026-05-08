@@ -3,9 +3,6 @@ title: "PhillyStat360 — 06: Vector Tiling with Tippecanoe (R port)"
 output: html_document
 ---
 
-R port of `code/python/06_tiling.ipynb`. Builds vector tilesets (`.pmtiles`)
-from the GeoJSON exports produced by `05_output_analysis.Rmd`.
-
 > Tippecanoe is a CLI tool — there is no R wrapper. This Rmd shells out to
 > `tippecanoe` via `system2()`. Install it first:
 >

@@ -3,9 +3,6 @@ title: "PhillyStat360 — 04e: Operational thresholds & capacity flags (R port)"
 output: html_document
 ---
 
-R port of `code/python/04e_operational_thresholds.ipynb`. Translates
-`ensemble_prob` into a deployable flag list using a per-ward inspection budget.
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
