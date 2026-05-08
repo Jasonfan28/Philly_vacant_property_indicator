@@ -4,461 +4,527 @@
     "total": 322,
     "flagged": 2,
     "mean_prob": 0.01063818258896327,
-    "observed_vacant": 3
+    "observed_vacant": 3,
+    "underreported": 0
   },
   {
     "ward": 2,
     "total": 1104,
     "flagged": 2,
     "mean_prob": 0.005829831161002651,
-    "observed_vacant": 6
+    "observed_vacant": 6,
+    "underreported": 0
   },
   {
     "ward": 3,
     "total": 437,
     "flagged": 12,
     "mean_prob": 0.03634541327839615,
-    "observed_vacant": 10
+    "observed_vacant": 10,
+    "underreported": 4
   },
   {
     "ward": 4,
     "total": 316,
     "flagged": 5,
     "mean_prob": 0.026637600360570876,
-    "observed_vacant": 5
+    "observed_vacant": 5,
+    "underreported": 1
   },
   {
     "ward": 5,
     "total": 1613,
     "flagged": 2,
     "mean_prob": 0.006602267783858184,
-    "observed_vacant": 6
+    "observed_vacant": 6,
+    "underreported": 0
   },
   {
     "ward": 6,
     "total": 605,
     "flagged": 8,
     "mean_prob": 0.01741016239475774,
-    "observed_vacant": 11
+    "observed_vacant": 11,
+    "underreported": 2
   },
   {
     "ward": 7,
     "total": 327,
     "flagged": 3,
     "mean_prob": 0.02286998725962542,
-    "observed_vacant": 2
+    "observed_vacant": 2,
+    "underreported": 1
   },
   {
     "ward": 8,
     "total": 1013,
     "flagged": 2,
     "mean_prob": 0.007073664560568641,
-    "observed_vacant": 2
+    "observed_vacant": 2,
+    "underreported": 0
   },
   {
     "ward": 9,
     "total": 210,
     "flagged": 0,
     "mean_prob": 0.004233435609909915,
-    "observed_vacant": 1
+    "observed_vacant": 1,
+    "underreported": 0
   },
   {
     "ward": 10,
     "total": 8633,
     "flagged": 71,
     "mean_prob": 0.014030190222276877,
-    "observed_vacant": 73
+    "observed_vacant": 73,
+    "underreported": 16
   },
   {
     "ward": 11,
     "total": 4700,
     "flagged": 176,
     "mean_prob": 0.043645030808026265,
-    "observed_vacant": 217
+    "observed_vacant": 217,
+    "underreported": 25
   },
   {
     "ward": 12,
     "total": 6428,
     "flagged": 157,
     "mean_prob": 0.02763335778018956,
-    "observed_vacant": 151
+    "observed_vacant": 151,
+    "underreported": 55
   },
   {
     "ward": 13,
     "total": 6968,
     "flagged": 243,
     "mean_prob": 0.036086961179578735,
-    "observed_vacant": 204
+    "observed_vacant": 204,
+    "underreported": 72
   },
   {
     "ward": 14,
     "total": 1365,
     "flagged": 3,
     "mean_prob": 0.0028957081612932365,
-    "observed_vacant": 9
+    "observed_vacant": 9,
+    "underreported": 0
   },
   {
     "ward": 15,
     "total": 5259,
     "flagged": 11,
     "mean_prob": 0.003091697398411096,
-    "observed_vacant": 17
+    "observed_vacant": 17,
+    "underreported": 3
   },
   {
     "ward": 16,
     "total": 4321,
     "flagged": 111,
     "mean_prob": 0.037673619064642234,
-    "observed_vacant": 158
+    "observed_vacant": 158,
+    "underreported": 0
   },
   {
     "ward": 17,
     "total": 7399,
     "flagged": 101,
     "mean_prob": 0.01788424683994807,
-    "observed_vacant": 103
+    "observed_vacant": 103,
+    "underreported": 30
   },
   {
     "ward": 18,
     "total": 6900,
     "flagged": 16,
     "mean_prob": 0.004222829404764967,
-    "observed_vacant": 35
+    "observed_vacant": 35,
+    "underreported": 2
   },
   {
     "ward": 19,
     "total": 4970,
     "flagged": 50,
     "mean_prob": 0.014021471154200328,
-    "observed_vacant": 58
+    "observed_vacant": 58,
+    "underreported": 19
   },
   {
     "ward": 20,
     "total": 1877,
     "flagged": 12,
     "mean_prob": 0.007198522296805691,
-    "observed_vacant": 14
+    "observed_vacant": 14,
+    "underreported": 5
   },
   {
     "ward": 21,
     "total": 15372,
     "flagged": 31,
     "mean_prob": 0.003239355266684518,
-    "observed_vacant": 50
+    "observed_vacant": 50,
+    "underreported": 6
   },
   {
     "ward": 22,
     "total": 7242,
     "flagged": 43,
     "mean_prob": 0.008969686648898259,
-    "observed_vacant": 57
+    "observed_vacant": 57,
+    "underreported": 8
   },
   {
     "ward": 23,
     "total": 7009,
     "flagged": 87,
     "mean_prob": 0.016687385972082233,
-    "observed_vacant": 106
+    "observed_vacant": 106,
+    "underreported": 18
   },
   {
     "ward": 24,
     "total": 3672,
     "flagged": 73,
     "mean_prob": 0.023106664208699727,
-    "observed_vacant": 86
+    "observed_vacant": 86,
+    "underreported": 15
   },
   {
     "ward": 25,
     "total": 8124,
     "flagged": 178,
     "mean_prob": 0.02687343715543782,
-    "observed_vacant": 206
+    "observed_vacant": 206,
+    "underreported": 34
   },
   {
     "ward": 26,
     "total": 7218,
     "flagged": 11,
     "mean_prob": 0.002884086294532318,
-    "observed_vacant": 22
+    "observed_vacant": 22,
+    "underreported": 1
   },
   {
     "ward": 27,
     "total": 2875,
     "flagged": 38,
     "mean_prob": 0.0157870307455704,
-    "observed_vacant": 53
+    "observed_vacant": 53,
+    "underreported": 9
   },
   {
     "ward": 28,
     "total": 4907,
     "flagged": 134,
     "mean_prob": 0.040884785377748346,
-    "observed_vacant": 188
+    "observed_vacant": 188,
+    "underreported": 0
   },
   {
     "ward": 29,
     "total": 4042,
     "flagged": 80,
     "mean_prob": 0.023637965401170486,
-    "observed_vacant": 91
+    "observed_vacant": 91,
+    "underreported": 15
   },
   {
     "ward": 30,
     "total": 5845,
     "flagged": 17,
     "mean_prob": 0.0039227884643015035,
-    "observed_vacant": 26
+    "observed_vacant": 26,
+    "underreported": 2
   },
   {
     "ward": 31,
     "total": 7648,
     "flagged": 56,
     "mean_prob": 0.009453679985885765,
-    "observed_vacant": 76
+    "observed_vacant": 76,
+    "underreported": 10
   },
   {
     "ward": 32,
     "total": 6304,
     "flagged": 224,
     "mean_prob": 0.03518604598642473,
-    "observed_vacant": 222
+    "observed_vacant": 222,
+    "underreported": 56
   },
   {
     "ward": 33,
     "total": 8077,
     "flagged": 193,
     "mean_prob": 0.02630062303992054,
-    "observed_vacant": 190
+    "observed_vacant": 190,
+    "underreported": 37
   },
   {
     "ward": 34,
     "total": 12700,
     "flagged": 145,
     "mean_prob": 0.01394857605753774,
-    "observed_vacant": 172
+    "observed_vacant": 172,
+    "underreported": 29
   },
   {
     "ward": 35,
     "total": 9827,
     "flagged": 27,
     "mean_prob": 0.007679129189110272,
-    "observed_vacant": 41
+    "observed_vacant": 41,
+    "underreported": 5
   },
   {
     "ward": 36,
     "total": 13692,
     "flagged": 106,
     "mean_prob": 0.010188488630054662,
-    "observed_vacant": 162
+    "observed_vacant": 162,
+    "underreported": 20
   },
   {
     "ward": 37,
     "total": 4583,
     "flagged": 130,
     "mean_prob": 0.03005942408079992,
-    "observed_vacant": 142
+    "observed_vacant": 142,
+    "underreported": 26
   },
   {
     "ward": 38,
     "total": 6289,
     "flagged": 88,
     "mean_prob": 0.018562705667166928,
-    "observed_vacant": 134
+    "observed_vacant": 134,
+    "underreported": 5
   },
   {
     "ward": 39,
     "total": 16620,
     "flagged": 54,
     "mean_prob": 0.0050014390882881675,
-    "observed_vacant": 106
+    "observed_vacant": 106,
+    "underreported": 12
   },
   {
     "ward": 40,
     "total": 15538,
     "flagged": 275,
     "mean_prob": 0.019145811654211163,
-    "observed_vacant": 281
+    "observed_vacant": 281,
+    "underreported": 71
   },
   {
     "ward": 41,
     "total": 7933,
     "flagged": 32,
     "mean_prob": 0.008855654812731787,
-    "observed_vacant": 41
+    "observed_vacant": 41,
+    "underreported": 3
   },
   {
     "ward": 42,
     "total": 9773,
     "flagged": 96,
     "mean_prob": 0.012934467408514642,
-    "observed_vacant": 94
+    "observed_vacant": 94,
+    "underreported": 34
   },
   {
     "ward": 43,
     "total": 7224,
     "flagged": 136,
     "mean_prob": 0.021627984946020747,
-    "observed_vacant": 139
+    "observed_vacant": 139,
+    "underreported": 34
   },
   {
     "ward": 44,
     "total": 5250,
     "flagged": 208,
     "mean_prob": 0.042608171327413485,
-    "observed_vacant": 191
+    "observed_vacant": 191,
+    "underreported": 58
   },
   {
     "ward": 45,
     "total": 9465,
     "flagged": 130,
     "mean_prob": 0.016475845381651668,
-    "observed_vacant": 150
+    "observed_vacant": 150,
+    "underreported": 27
   },
   {
     "ward": 46,
     "total": 5634,
     "flagged": 82,
     "mean_prob": 0.019866178793978433,
-    "observed_vacant": 100
+    "observed_vacant": 100,
+    "underreported": 13
   },
   {
     "ward": 47,
     "total": 2055,
     "flagged": 29,
     "mean_prob": 0.015399160608618517,
-    "observed_vacant": 33
+    "observed_vacant": 33,
+    "underreported": 5
   },
   {
     "ward": 48,
     "total": 6887,
     "flagged": 48,
     "mean_prob": 0.008653199165615532,
-    "observed_vacant": 73
+    "observed_vacant": 73,
+    "underreported": 8
   },
   {
     "ward": 49,
     "total": 7262,
     "flagged": 112,
     "mean_prob": 0.01874098741066181,
-    "observed_vacant": 106
+    "observed_vacant": 106,
+    "underreported": 36
   },
   {
     "ward": 50,
     "total": 9489,
     "flagged": 28,
     "mean_prob": 0.005718513216651531,
-    "observed_vacant": 43
+    "observed_vacant": 43,
+    "underreported": 6
   },
   {
     "ward": 51,
     "total": 7985,
     "flagged": 220,
     "mean_prob": 0.032873156157290424,
-    "observed_vacant": 207
+    "observed_vacant": 207,
+    "underreported": 58
   },
   {
     "ward": 52,
     "total": 6045,
     "flagged": 65,
     "mean_prob": 0.013786344074813684,
-    "observed_vacant": 70
+    "observed_vacant": 70,
+    "underreported": 12
   },
   {
     "ward": 53,
     "total": 7552,
     "flagged": 8,
     "mean_prob": 0.004153849879643603,
-    "observed_vacant": 20
+    "observed_vacant": 20,
+    "underreported": 0
   },
   {
     "ward": 54,
     "total": 7261,
     "flagged": 4,
     "mean_prob": 0.003930812315435695,
-    "observed_vacant": 12
+    "observed_vacant": 12,
+    "underreported": 0
   },
   {
     "ward": 55,
     "total": 9684,
     "flagged": 11,
     "mean_prob": 0.00505487653289655,
-    "observed_vacant": 19
+    "observed_vacant": 19,
+    "underreported": 1
   },
   {
     "ward": 56,
     "total": 10307,
     "flagged": 12,
     "mean_prob": 0.0024528537386433297,
-    "observed_vacant": 24
+    "observed_vacant": 24,
+    "underreported": 3
   },
   {
     "ward": 57,
     "total": 7290,
     "flagged": 5,
     "mean_prob": 0.0017983265872710472,
-    "observed_vacant": 9
+    "observed_vacant": 9,
+    "underreported": 0
   },
   {
     "ward": 58,
     "total": 13689,
     "flagged": 8,
     "mean_prob": 0.001156960808465527,
-    "observed_vacant": 16
+    "observed_vacant": 16,
+    "underreported": 1
   },
   {
     "ward": 59,
     "total": 5826,
     "flagged": 95,
     "mean_prob": 0.023190964520680136,
-    "observed_vacant": 101
+    "observed_vacant": 101,
+    "underreported": 18
   },
   {
     "ward": 60,
     "total": 5949,
     "flagged": 106,
     "mean_prob": 0.022247311361840653,
-    "observed_vacant": 127
+    "observed_vacant": 127,
+    "underreported": 21
   },
   {
     "ward": 61,
     "total": 8931,
     "flagged": 28,
     "mean_prob": 0.00666759331374433,
-    "observed_vacant": 38
+    "observed_vacant": 38,
+    "underreported": 8
   },
   {
     "ward": 62,
     "total": 9375,
     "flagged": 39,
     "mean_prob": 0.009110401660099639,
-    "observed_vacant": 53
+    "observed_vacant": 53,
+    "underreported": 7
   },
   {
     "ward": 63,
     "total": 7190,
     "flagged": 4,
     "mean_prob": 0.0014560354154765358,
-    "observed_vacant": 12
+    "observed_vacant": 12,
+    "underreported": 0
   },
   {
     "ward": 64,
     "total": 5374,
     "flagged": 8,
     "mean_prob": 0.003671050531064671,
-    "observed_vacant": 9
+    "observed_vacant": 9,
+    "underreported": 2
   },
   {
     "ward": 65,
     "total": 6512,
     "flagged": 18,
     "mean_prob": 0.004992309524298703,
-    "observed_vacant": 25
+    "observed_vacant": 25,
+    "underreported": 5
   },
   {
     "ward": 66,
     "total": 13972,
     "flagged": 9,
     "mean_prob": 0.0016200797482144838,
-    "observed_vacant": 25
+    "observed_vacant": 25,
+    "underreported": 1
   }
 ]

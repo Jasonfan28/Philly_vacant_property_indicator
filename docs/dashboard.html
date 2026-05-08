@@ -118,6 +118,13 @@
   #map-info-badge { position:absolute; bottom:28px; right:14px; background:rgba(255,255,255,.95); border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:3px; padding:7px 11px; font-size:11px; color:var(--muted); z-index:900; pointer-events:none; max-width:210px; line-height:1.4; }
   #map-info-badge strong { font-family:var(--font-head); font-size:11px; font-weight:700; color:var(--blue-dark); display:block; margin-bottom:1px; }
 
+  /* View tabs (top-center map overlay) */
+  #view-tabs { position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:900; display:flex; background:var(--white); border:1px solid var(--border); border-radius:3px; box-shadow:0 2px 8px rgba(0,0,0,.12); overflow:hidden; }
+  .view-tab { font-family:var(--font-head); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:none; background:var(--white); color:var(--muted); cursor:pointer; border-right:1px solid var(--border); transition:background .12s,color .12s; }
+  .view-tab:last-child { border-right:none; }
+  .view-tab:hover { color:var(--blue-dark); background:var(--surface); }
+  .view-tab.active { background:var(--blue-dark); color:var(--white); }
+
   /* Search box */
   #search-box { position:absolute; top:14px; left:14px; z-index:900; display:flex; gap:6px; }
   #search-input { width:280px; padding:8px 12px; border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:3px; font-family:var(--font-body); font-size:12px; color:var(--body); background:var(--white); box-shadow:0 2px 8px rgba(0,0,0,.12); outline:none; }
@@ -207,33 +214,14 @@
   <!-- SIDEBAR -->
   <aside id="sidebar">
 
-    <!-- Risk Tiers Legend -->
+    <!-- Legend (rendered per active view) -->
     <div class="sidebar-section">
-      <h3>Risk Tiers</h3>
-      <div class="legend-item">
-        <div class="legend-swatch" style="background:#7f0000;"></div>
-        <div><div class="legend-item-label">Very High Risk</div><div class="legend-item-sub">Ensemble prob &ge; 80%</div></div>
-      </div>
-      <div class="legend-item">
-        <div class="legend-swatch" style="background:#cc3000;"></div>
-        <div><div class="legend-item-label">High Risk</div><div class="legend-item-sub">Ensemble prob 60&ndash;80%</div></div>
-      </div>
-      <div class="legend-item">
-        <div class="legend-swatch" style="background:#f3c613;"></div>
-        <div><div class="legend-item-label">Medium Risk</div><div class="legend-item-sub">Ensemble prob 40&ndash;60%</div></div>
-      </div>
-      <div class="legend-item">
-        <div class="legend-swatch" style="background:#96c9ff;"></div>
-        <div><div class="legend-item-label">Low Risk</div><div class="legend-item-sub">Ensemble prob 20&ndash;40%</div></div>
-      </div>
-      <div class="legend-item">
-        <div class="legend-swatch" style="background:#daedfe;border:1px solid #96c9ff;"></div>
-        <div><div class="legend-item-label">Very Low Risk</div><div class="legend-item-sub">Ensemble prob &lt; 20%</div></div>
-      </div>
+      <h3 id="legend-title">Risk Tiers</h3>
+      <div id="legend-body"></div>
       <div class="choropleth-wrap">
-        <div class="choropleth-label">Ward Choropleth</div>
-        <div class="choropleth-bar"></div>
-        <div class="choropleth-ends"><span>Low risk</span><span>High risk</span></div>
+        <div class="choropleth-label" id="choro-title">Ward Choropleth</div>
+        <div class="choropleth-bar" id="choro-bar"></div>
+        <div class="choropleth-ends"><span id="choro-low">Low risk</span><span id="choro-high">High risk</span></div>
       </div>
     </div>
 
@@ -316,6 +304,12 @@
   <div id="map-container">
     <div id="map"></div>
 
+    <div id="view-tabs">
+      <button class="view-tab active" data-view="risk">Predicted Risk</button>
+      <button class="view-tab" data-view="observed">Predicted vs Observed</button>
+      <button class="view-tab" data-view="underreported">Underreported Vacancy</button>
+    </div>
+
     <div id="search-box">
       <input id="search-input" type="text" placeholder="Search parcel number or address...">
       <button id="search-btn">Search</button>
@@ -386,6 +380,7 @@ let map = null;
 let activeWard  = null;
 let activeTract = null;
 let activeRisk  = null;
+let mapView     = 'risk'; // 'risk' | 'observed' | 'underreported'
 let wardChart   = null;
 let allWardStats = {};
 let wardBoundsIndex = {};
@@ -433,6 +428,7 @@ function buildPopup(p) {
       <div class="popup-section-label">Model Flags</div>
       <div class="ovs-indicators">
         <div class="ovs-item">Ensemble flagged: <b>${p.ensemble_flag ? 'Yes' : 'No'}</b></div>
+        <div class="ovs-item">Observed vacant (city signal): <b>${p.ovs == 1 ? 'Yes' : 'No'}</b></div>
       </div>
       <a class="popup-atlas-link" href="https://atlas.phila.gov/#/${p.parcel_number}" target="_blank" rel="noopener">
         View on Atlas Phila &#8599;
@@ -454,11 +450,115 @@ const probOpacity = [
   0, 0.15, 0.2, 0.5, 0.4, 0.7, 0.8, 0.9
 ];
 
-// ── Ward choropleth color ─────────────────────────────────────
+// "Predicted vs Observed" — confusion-matrix coloring
+//   green  = both agree vacant     (ovs=1, flag=1)
+//   red    = model flag, no signal (ovs=0, flag=1) → underreported candidate
+//   blue   = city signal, model missed (ovs=1, flag=0)
+//   gray   = both agree not vacant (ovs=0, flag=0)
+const observedColor = [
+  'case',
+  ['all', ['==', ['get','ovs'], 1], ['==', ['get','ensemble_flag'], 1]], '#3a833c',
+  ['all', ['==', ['get','ovs'], 0], ['==', ['get','ensemble_flag'], 1]], '#cc3000',
+  ['all', ['==', ['get','ovs'], 1], ['==', ['get','ensemble_flag'], 0]], '#2176d2',
+  '#cccccc'
+];
+const observedOpacity = [
+  'case',
+  ['any', ['==', ['get','ovs'], 1], ['==', ['get','ensemble_flag'], 1]], 0.85,
+  0.06
+];
+
+function getParcelPaint(view) {
+  if (view === 'observed') return { color: observedColor, opacity: observedOpacity };
+  // 'risk' and 'underreported' both use the probability ramp
+  return { color: probColor, opacity: probOpacity };
+}
+
+// ── Ward choropleth color (view-aware) ────────────────────────
 const CHORO = ['#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026'];
-function choroColor(flagged, total, mean_prob) {
-  const v = mean_prob || 0;
-  return v >= 0.08 ? CHORO[4] : v >= 0.05 ? CHORO[3] : v >= 0.03 ? CHORO[2] : v >= 0.01 ? CHORO[1] : CHORO[0];
+function choroColor(stat, view) {
+  const total = stat.total || 0;
+  let v;
+  if (view === 'observed') {
+    v = total ? (stat.observed_vacant || 0) / total : 0;
+  } else if (view === 'underreported') {
+    v = total ? (stat.underreported || 0) / total : 0;
+  } else {
+    v = stat.mean_prob || 0;
+  }
+  // Same five-bucket palette, calibrated per view's typical range.
+  const breaks = view === 'observed'
+    ? [0.005, 0.015, 0.03, 0.05]
+    : view === 'underreported'
+    ? [0.001, 0.003, 0.006, 0.012]
+    : [0.01, 0.03, 0.05, 0.08];
+  return v >= breaks[3] ? CHORO[4] : v >= breaks[2] ? CHORO[3] : v >= breaks[1] ? CHORO[2] : v >= breaks[0] ? CHORO[1] : CHORO[0];
+}
+
+// ── Legend rendering ──────────────────────────────────────────
+const LEGENDS = {
+  risk: {
+    title: 'Risk Tiers',
+    items: [
+      { sw: '#7f0000', label: 'Very High Risk', sub: 'Ensemble prob ≥ 80%' },
+      { sw: '#cc3000', label: 'High Risk',      sub: 'Ensemble prob 60–80%' },
+      { sw: '#f3c613', label: 'Medium Risk',    sub: 'Ensemble prob 40–60%' },
+      { sw: '#96c9ff', label: 'Low Risk',       sub: 'Ensemble prob 20–40%' },
+      { sw: '#daedfe', label: 'Very Low Risk',  sub: 'Ensemble prob < 20%', border: '#96c9ff' }
+    ],
+    choroTitle: 'Ward Choropleth — mean predicted prob',
+    choroLow: 'Low', choroHigh: 'High'
+  },
+  observed: {
+    title: 'Predicted vs Observed',
+    items: [
+      { sw: '#3a833c', label: 'Agreed Vacant',     sub: 'Model flag · city signal' },
+      { sw: '#cc3000', label: 'Underreported',     sub: 'Model flag · no city signal' },
+      { sw: '#2176d2', label: 'Model Missed',      sub: 'City signal · no model flag' },
+      { sw: '#cccccc', label: 'Agreed Not Vacant', sub: 'Faded — both negative' }
+    ],
+    choroTitle: 'Ward Choropleth — observed vacancy rate',
+    choroLow: 'Low', choroHigh: 'High'
+  },
+  underreported: {
+    title: 'Underreported Vacancy',
+    items: [
+      { sw: '#7f0000', label: 'Very High Risk', sub: 'Ensemble prob ≥ 80%' },
+      { sw: '#cc3000', label: 'High Risk',      sub: 'Ensemble prob 60–80%' },
+      { sw: '#f3c613', label: 'Medium Risk',    sub: 'Ensemble prob 40–60%' }
+    ],
+    note: 'Showing only flagged parcels with no city vacancy signal (ovs = 0).',
+    choroTitle: 'Ward Choropleth — underreported rate',
+    choroLow: 'Low', choroHigh: 'High'
+  }
+};
+
+function renderLegend(view) {
+  const cfg = LEGENDS[view] || LEGENDS.risk;
+  document.getElementById('legend-title').textContent = cfg.title;
+  const body = document.getElementById('legend-body');
+  body.innerHTML = '';
+  cfg.items.forEach(it => {
+    const row = document.createElement('div');
+    row.className = 'legend-item';
+    const sw = document.createElement('div');
+    sw.className = 'legend-swatch';
+    sw.style.background = it.sw;
+    if (it.border) sw.style.border = `1px solid ${it.border}`;
+    const txt = document.createElement('div');
+    txt.innerHTML = `<div class="legend-item-label">${it.label}</div><div class="legend-item-sub">${it.sub}</div>`;
+    row.appendChild(sw); row.appendChild(txt);
+    body.appendChild(row);
+  });
+  if (cfg.note) {
+    const n = document.createElement('div');
+    n.style.cssText = 'font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;font-style:italic;';
+    n.textContent = cfg.note;
+    body.appendChild(n);
+  }
+  document.getElementById('choro-title').textContent = cfg.choroTitle;
+  document.getElementById('choro-low').textContent  = cfg.choroLow;
+  document.getElementById('choro-high').textContent = cfg.choroHigh;
 }
 
 // ── Bounds helpers ────────────────────────────────────────────
@@ -531,7 +631,7 @@ async function loadWardChoro() {
           ward: wardNum,
           flagged: stat.flagged,
           total: stat.total,
-          color: choroColor(stat.flagged, stat.total, stat.mean_prob)
+          color: choroColor(stat, mapView)
         }
       };
     });
@@ -684,40 +784,56 @@ function selectTract(tract, btn) {
 }
 
 // ── MapLibre filter ───────────────────────────────────────────
+function viewFilterParts(view) {
+  // Filter clauses required by the active view (independent of user selection).
+  if (view === 'underreported') {
+    return [
+      ['==', ['get', 'ensemble_flag'], 1],
+      ['==', ['get', 'ovs'], 0]
+    ];
+  }
+  return [];
+}
+
 function updateFilter() {
   if (!map || !map.getLayer('parcel-fill')) return;
+  const parts = [];
+  if (activeWard)  parts.push(['==', ['to-string', ['get', 'geographic_ward']], activeWard]);
+  if (activeTract) parts.push(['==', ['to-string', ['get', 'census_tract']], activeTract]);
+  if (activeRisk)  parts.push(['==', ['get', 'qtile_tier'], activeRisk]);
+  parts.push(...viewFilterParts(mapView));
+
   let mapFilter = null;
-  if (activeWard && activeTract && activeRisk) {
-    mapFilter = ['all',
-      ['==', ['to-string', ['get', 'geographic_ward']], activeWard],
-      ['==', ['to-string', ['get', 'census_tract']], activeTract],
-      ['==', ['get', 'qtile_tier'], activeRisk]
-    ];
-  } else if (activeWard && activeTract) {
-    mapFilter = ['all',
-      ['==', ['to-string', ['get', 'geographic_ward']], activeWard],
-      ['==', ['to-string', ['get', 'census_tract']], activeTract]
-    ];
-  } else if (activeWard && activeRisk) {
-    mapFilter = ['all',
-      ['==', ['to-string', ['get', 'geographic_ward']], activeWard],
-      ['==', ['get', 'qtile_tier'], activeRisk]
-    ];
-  } else if (activeTract && activeRisk) {
-    mapFilter = ['all',
-      ['==', ['to-string', ['get', 'census_tract']], activeTract],
-      ['==', ['get', 'qtile_tier'], activeRisk]
-    ];
-  } else if (activeWard) {
-    mapFilter = ['==', ['to-string', ['get', 'geographic_ward']], activeWard];
-  } else if (activeTract) {
-    mapFilter = ['==', ['to-string', ['get', 'census_tract']], activeTract];
-  } else if (activeRisk) {
-    mapFilter = ['==', ['get', 'qtile_tier'], activeRisk];
-  }
+  if (parts.length === 1)      mapFilter = parts[0];
+  else if (parts.length > 1)   mapFilter = ['all', ...parts];
+
   map.setFilter('parcel-fill', mapFilter);
   map.setFilter('parcel-line', mapFilter);
 }
+
+// ── View switching ────────────────────────────────────────────
+function applyMapView(view) {
+  if (!LEGENDS[view]) view = 'risk';
+  mapView = view;
+  document.querySelectorAll('.view-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view));
+  renderLegend(view);
+
+  if (map && map.getLayer('parcel-fill')) {
+    const paint = getParcelPaint(view);
+    map.setPaintProperty('parcel-fill', 'fill-color', paint.color);
+    map.setPaintProperty('parcel-fill', 'fill-opacity',
+      ['interpolate', ['linear'], ['zoom'], 12, 0, 13, paint.opacity]);
+    map.setPaintProperty('parcel-line', 'line-color', paint.color);
+    updateFilter();
+  }
+  loadWardChoro();
+  updateMapModeBadge();
+}
+
+document.querySelectorAll('.view-tab').forEach(btn => {
+  btn.addEventListener('click', () => applyMapView(btn.dataset.view));
+});
 
 // ── Search (Option B: flagged parcels only) ───────────────────
 document.getElementById('search-btn').addEventListener('click', doSearch);
@@ -781,27 +897,34 @@ document.addEventListener('click', e => {
 });
 
 // ── Map mode badge ────────────────────────────────────────────
+const VIEW_LABELS = {
+  risk:          { parcel: 'Parcel Risk Layer',     ward: 'Ward Mean Risk' },
+  observed:      { parcel: 'Predicted vs Observed', ward: 'Ward Observed Vacancy' },
+  underreported: { parcel: 'Underreported Parcels', ward: 'Ward Underreported Rate' }
+};
 function updateMapModeBadge() {
   if (!map) return;
   const z = map.getZoom();
+  const labels = VIEW_LABELS[mapView] || VIEW_LABELS.risk;
   const lbl  = document.getElementById('map-mode-label');
   const desc = document.getElementById('map-mode-desc');
   const lbl2  = document.getElementById('map-mode-label2');
   const desc2 = document.getElementById('map-mode-desc2');
   if (z >= 13) {
-    lbl.textContent = 'Parcel Risk Layer';
-    desc.textContent = 'Showing individual parcel colors';
-    lbl2.textContent = 'Parcel Risk Layer';
+    lbl.textContent = labels.parcel;
+    desc.textContent = 'Showing individual parcels';
+    lbl2.textContent = labels.parcel;
     desc2.textContent = 'Click parcel for details';
   } else {
-    lbl.textContent = 'Ward Choropleth';
+    lbl.textContent = labels.ward;
     desc.textContent = 'Zoom to 13+ for parcel layer';
-    lbl2.textContent = 'Ward Choropleth';
+    lbl2.textContent = labels.ward;
     desc2.textContent = 'Zoom ≥ 13 for parcel markers';
   }
 }
 
 // ── Sidebar bootstraps immediately, independent of PMTiles ────
+renderLegend(mapView);
 loadSummary();
 loadWards();
 buildRiskButtons();

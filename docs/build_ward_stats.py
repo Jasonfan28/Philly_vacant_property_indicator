@@ -51,10 +51,11 @@ def main() -> None:
         print(f"Scanning z={z} tiles in [{x_min}-{x_max}] × [{y_min}-{y_max}] "
               f"({candidates} candidates)")
 
-        per_ward_total    = defaultdict(int)
-        per_ward_flagged  = defaultdict(int)
-        per_ward_observed = defaultdict(int)
-        per_ward_prob_sum = defaultdict(float)
+        per_ward_total        = defaultdict(int)
+        per_ward_flagged      = defaultdict(int)
+        per_ward_observed     = defaultdict(int)
+        per_ward_underreport  = defaultdict(int)
+        per_ward_prob_sum     = defaultdict(float)
         seen: set[str] = set()
         tiles_with_data = 0
 
@@ -81,10 +82,13 @@ def main() -> None:
                     if ward is None:
                         continue
                     ward = int(ward)
-                    per_ward_total[ward]    += 1
-                    per_ward_flagged[ward]  += int(props.get("ensemble_flag") or 0)
-                    per_ward_observed[ward] += 1 if int(props.get("ovs") or 0) == 1 else 0
-                    per_ward_prob_sum[ward] += float(props.get("ensemble_prob") or 0)
+                    flag = int(props.get("ensemble_flag") or 0)
+                    ovs  = int(props.get("ovs") or 0)
+                    per_ward_total[ward]       += 1
+                    per_ward_flagged[ward]     += flag
+                    per_ward_observed[ward]    += 1 if ovs == 1 else 0
+                    per_ward_underreport[ward] += 1 if (flag == 1 and ovs == 0) else 0
+                    per_ward_prob_sum[ward]    += float(props.get("ensemble_prob") or 0)
 
         print(f"Tiles with data: {tiles_with_data}")
         print(f"Unique parcels:  {len(seen)}")
@@ -98,14 +102,17 @@ def main() -> None:
             "flagged":         per_ward_flagged[ward],
             "mean_prob":       per_ward_prob_sum[ward] / total if total else 0.0,
             "observed_vacant": per_ward_observed[ward],
+            "underreported":   per_ward_underreport[ward],
         })
 
     OUT_PATH.write_text(json.dumps(rows, indent=2))
-    grand_total    = sum(r["total"] for r in rows)
-    grand_flagged  = sum(r["flagged"] for r in rows)
-    grand_observed = sum(r["observed_vacant"] for r in rows)
+    grand_total        = sum(r["total"] for r in rows)
+    grand_flagged      = sum(r["flagged"] for r in rows)
+    grand_observed     = sum(r["observed_vacant"] for r in rows)
+    grand_underreport  = sum(r["underreported"] for r in rows)
     print(f"Wards: {len(rows)}  parcels: {grand_total}  "
-          f"flagged: {grand_flagged}  observed_vacant: {grand_observed}")
+          f"flagged: {grand_flagged}  observed_vacant: {grand_observed}  "
+          f"underreported: {grand_underreport}")
     print(f"Wrote {OUT_PATH}")
 
 
