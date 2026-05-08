@@ -411,8 +411,8 @@ function buildPopup(p) {
   const barColor = prob >= 0.6 ? '#cc3000' : prob >= 0.4 ? '#c87800' : '#2176d2';
   return `
     <div class="popup-header">
-      <div class="address">Parcel ${p.parcel_number || 'N/A'}</div>
-      <div class="meta">ZIP ${p.zip_code||'N/A'} &middot; Tract ${p.census_tract||'N/A'} &middot; Ward ${p.geographic_ward||'N/A'}</div>
+      <div class="address">${p.address || 'Address unavailable'}</div>
+      <div class="meta">Parcel ${p.parcel_number || 'N/A'} &middot; ZIP ${p.zip_code||'N/A'} &middot; Tract ${p.census_tract||'N/A'} &middot; Ward ${p.geographic_ward||'N/A'}</div>
       <span class="popup-risk-badge ${cls}">${label}</span>
       <div class="popup-prob-bar-wrap">
         <div class="popup-prob-bar-bg">
@@ -545,11 +545,15 @@ async function loadWardChoro() {
 async function loadSummary() {
   try {
     const stats = await getWardStats();
-    let total = 0, flagged = 0;
-    stats.forEach(w => { total += w.total || 0; flagged += w.flagged || 0; });
+    let total = 0, flagged = 0, observed = 0;
+    stats.forEach(w => {
+      total    += w.total    || 0;
+      flagged  += w.flagged  || 0;
+      observed += w.observed_vacant || 0;
+    });
     document.getElementById('val-total').textContent   = (total/1000).toFixed(0) + 'K';
     document.getElementById('val-flagged').textContent = flagged.toLocaleString();
-    document.getElementById('val-ovs').textContent     = 'N/A';
+    document.getElementById('val-ovs').textContent     = (observed && total) ? (observed/total*100).toFixed(2)+'%' : 'N/A';
     document.getElementById('val-rate').textContent    = total ? ((flagged/total)*100).toFixed(2)+'%' : 'N/A';
   } catch(e) { console.warn('Summary failed:', e); }
 }
