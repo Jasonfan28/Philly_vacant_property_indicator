@@ -1,5 +1,5 @@
 ---
-title: "PhillyStat360 — 04c: Final Model vs. City of Philadelphia VPI (R port)"
+title: "PhillyStat360 — 04c: Final Model vs. City of Philadelphia VPI"
 output: html_document
 ---
 

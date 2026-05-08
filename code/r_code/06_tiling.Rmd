@@ -1,5 +1,5 @@
 ---
-title: "PhillyStat360 — 06: Vector Tiling with Tippecanoe (R port)"
+title: "PhillyStat360 — 06: Vector Tiling with Tippecanoe"
 output: html_document
 ---
 

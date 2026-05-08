@@ -1,5 +1,5 @@
 ---
-title: "PhillyStat360 — 04b: VPI Comparison & Spatial Analysis (R port)"
+title: "PhillyStat360 — 04b: VPI Comparison & Spatial Analysis"
 output: html_document
 ---
 

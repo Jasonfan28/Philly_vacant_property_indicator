@@ -1,5 +1,5 @@
 ---
-title: "PhillyStat360 — 04g: Temporal validation (R port)"
+title: "PhillyStat360 — 04g: Temporal validation"
 output: html_document
 ---
 

@@ -886,7 +886,7 @@ A model that is operationally useful must be explainable at the parcel level. An
 
 #### 13.1 Explainer setup
 
-The R port uses `treeshap` on the fitted Random Forest component (which dominates the feature attribution alongside the Logistic Regression in the ensemble). For each parcel the explainer returns one SHAP value per feature.
+This step uses `treeshap` on the fitted Random Forest component (which dominates the feature attribution alongside the Logistic Regression in the ensemble). For each parcel the explainer returns one SHAP value per feature.
 
 #### 13.2 Top 200 flagged parcels, top 5 features each
 

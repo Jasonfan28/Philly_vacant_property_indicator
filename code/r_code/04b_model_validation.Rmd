@@ -1,5 +1,5 @@
 ---
-title: "PhillyStat360 — 04b: Model Validation (R port)"
+title: "PhillyStat360 — 04b: Model Validation"
 output: html_document
 ---
 

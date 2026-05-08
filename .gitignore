@@ -25,3 +25,10 @@ screenshots/
 # through LFS quota for no benefit.
 vacancy_predictions.geojson
 martin.zip
+
+# Pipeline data folders — raw inputs and model artefacts. Recreated by
+# running the Rmds; not checked in (some files are >100 MB, others contain
+# raw OPA/L&I extracts).
+data/
+data_py/
+rawdata/
