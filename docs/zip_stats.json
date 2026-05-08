@@ -1,0 +1,370 @@
+[
+  {
+    "zip": 19102,
+    "total": 116,
+    "flagged": 1,
+    "mean_prob": 0.012162787690122244,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "zip": 19103,
+    "total": 680,
+    "flagged": 0,
+    "mean_prob": 0.00563321873153614,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "zip": 19104,
+    "total": 5874,
+    "flagged": 87,
+    "mean_prob": 0.018326844030263117,
+    "observed_vacant": 108,
+    "underreported": 18
+  },
+  {
+    "zip": 19106,
+    "total": 416,
+    "flagged": 2,
+    "mean_prob": 0.00762496457048537,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "zip": 19107,
+    "total": 661,
+    "flagged": 0,
+    "mean_prob": 0.0077721768536224475,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "zip": 19111,
+    "total": 18282,
+    "flagged": 27,
+    "mean_prob": 0.00347636736465602,
+    "observed_vacant": 48,
+    "underreported": 1
+  },
+  {
+    "zip": 19114,
+    "total": 8361,
+    "flagged": 5,
+    "mean_prob": 0.0018112845050863894,
+    "observed_vacant": 14,
+    "underreported": 0
+  },
+  {
+    "zip": 19115,
+    "total": 8507,
+    "flagged": 4,
+    "mean_prob": 0.0011066979846848504,
+    "observed_vacant": 13,
+    "underreported": 0
+  },
+  {
+    "zip": 19116,
+    "total": 9038,
+    "flagged": 6,
+    "mean_prob": 0.0012624665524887389,
+    "observed_vacant": 10,
+    "underreported": 1
+  },
+  {
+    "zip": 19118,
+    "total": 142,
+    "flagged": 0,
+    "mean_prob": 0.004230412455650895,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "zip": 19119,
+    "total": 7114,
+    "flagged": 43,
+    "mean_prob": 0.009101300497756816,
+    "observed_vacant": 59,
+    "underreported": 7
+  },
+  {
+    "zip": 19120,
+    "total": 20652,
+    "flagged": 131,
+    "mean_prob": 0.01024373929773788,
+    "observed_vacant": 147,
+    "underreported": 41
+  },
+  {
+    "zip": 19121,
+    "total": 11458,
+    "flagged": 330,
+    "mean_prob": 0.03012525221031599,
+    "observed_vacant": 338,
+    "underreported": 76
+  },
+  {
+    "zip": 19122,
+    "total": 5910,
+    "flagged": 21,
+    "mean_prob": 0.0054748828313519295,
+    "observed_vacant": 35,
+    "underreported": 5
+  },
+  {
+    "zip": 19123,
+    "total": 1396,
+    "flagged": 5,
+    "mean_prob": 0.0040428956148894565,
+    "observed_vacant": 12,
+    "underreported": 1
+  },
+  {
+    "zip": 19124,
+    "total": 20736,
+    "flagged": 152,
+    "mean_prob": 0.011891846611432744,
+    "observed_vacant": 190,
+    "underreported": 31
+  },
+  {
+    "zip": 19125,
+    "total": 11078,
+    "flagged": 60,
+    "mean_prob": 0.007420334426645721,
+    "observed_vacant": 91,
+    "underreported": 9
+  },
+  {
+    "zip": 19126,
+    "total": 4792,
+    "flagged": 32,
+    "mean_prob": 0.010381447331121644,
+    "observed_vacant": 28,
+    "underreported": 11
+  },
+  {
+    "zip": 19127,
+    "total": 2556,
+    "flagged": 9,
+    "mean_prob": 0.005112053069752737,
+    "observed_vacant": 13,
+    "underreported": 3
+  },
+  {
+    "zip": 19128,
+    "total": 12275,
+    "flagged": 19,
+    "mean_prob": 0.0027277023811532403,
+    "observed_vacant": 32,
+    "underreported": 2
+  },
+  {
+    "zip": 19129,
+    "total": 3477,
+    "flagged": 20,
+    "mean_prob": 0.006613248884682335,
+    "observed_vacant": 28,
+    "underreported": 5
+  },
+  {
+    "zip": 19130,
+    "total": 6468,
+    "flagged": 19,
+    "mean_prob": 0.004217447390817172,
+    "observed_vacant": 30,
+    "underreported": 3
+  },
+  {
+    "zip": 19131,
+    "total": 8222,
+    "flagged": 137,
+    "mean_prob": 0.020293943477431468,
+    "observed_vacant": 153,
+    "underreported": 24
+  },
+  {
+    "zip": 19132,
+    "total": 15549,
+    "flagged": 390,
+    "mean_prob": 0.03609702208329372,
+    "observed_vacant": 591,
+    "underreported": 0
+  },
+  {
+    "zip": 19133,
+    "total": 7690,
+    "flagged": 154,
+    "mean_prob": 0.022139137254461417,
+    "observed_vacant": 164,
+    "underreported": 42
+  },
+  {
+    "zip": 19134,
+    "total": 17477,
+    "flagged": 458,
+    "mean_prob": 0.03031647884890914,
+    "observed_vacant": 485,
+    "underreported": 90
+  },
+  {
+    "zip": 19135,
+    "total": 11325,
+    "flagged": 32,
+    "mean_prob": 0.007000684464801176,
+    "observed_vacant": 43,
+    "underreported": 6
+  },
+  {
+    "zip": 19136,
+    "total": 10392,
+    "flagged": 27,
+    "mean_prob": 0.005182630370936874,
+    "observed_vacant": 35,
+    "underreported": 4
+  },
+  {
+    "zip": 19137,
+    "total": 3349,
+    "flagged": 23,
+    "mean_prob": 0.008551252149055364,
+    "observed_vacant": 33,
+    "underreported": 5
+  },
+  {
+    "zip": 19138,
+    "total": 12026,
+    "flagged": 143,
+    "mean_prob": 0.0182809216137906,
+    "observed_vacant": 139,
+    "underreported": 35
+  },
+  {
+    "zip": 19139,
+    "total": 10136,
+    "flagged": 275,
+    "mean_prob": 0.0314729463785636,
+    "observed_vacant": 274,
+    "underreported": 70
+  },
+  {
+    "zip": 19140,
+    "total": 17122,
+    "flagged": 504,
+    "mean_prob": 0.032472510413184344,
+    "observed_vacant": 459,
+    "underreported": 137
+  },
+  {
+    "zip": 19141,
+    "total": 9345,
+    "flagged": 139,
+    "mean_prob": 0.017641412814326674,
+    "observed_vacant": 137,
+    "underreported": 45
+  },
+  {
+    "zip": 19142,
+    "total": 10161,
+    "flagged": 219,
+    "mean_prob": 0.02270010947128472,
+    "observed_vacant": 213,
+    "underreported": 62
+  },
+  {
+    "zip": 19143,
+    "total": 18314,
+    "flagged": 392,
+    "mean_prob": 0.026557420757859985,
+    "observed_vacant": 413,
+    "underreported": 92
+  },
+  {
+    "zip": 19144,
+    "total": 11445,
+    "flagged": 232,
+    "mean_prob": 0.023696156118579625,
+    "observed_vacant": 231,
+    "underreported": 70
+  },
+  {
+    "zip": 19145,
+    "total": 17676,
+    "flagged": 83,
+    "mean_prob": 0.0063678627137766656,
+    "observed_vacant": 137,
+    "underreported": 13
+  },
+  {
+    "zip": 19146,
+    "total": 15997,
+    "flagged": 99,
+    "mean_prob": 0.008153671347768118,
+    "observed_vacant": 146,
+    "underreported": 18
+  },
+  {
+    "zip": 19147,
+    "total": 1480,
+    "flagged": 2,
+    "mean_prob": 0.005965937086918839,
+    "observed_vacant": 6,
+    "underreported": 0
+  },
+  {
+    "zip": 19148,
+    "total": 16763,
+    "flagged": 56,
+    "mean_prob": 0.0050972458221762405,
+    "observed_vacant": 109,
+    "underreported": 12
+  },
+  {
+    "zip": 19149,
+    "total": 17981,
+    "flagged": 16,
+    "mean_prob": 0.004694138424003474,
+    "observed_vacant": 40,
+    "underreported": 0
+  },
+  {
+    "zip": 19150,
+    "total": 8989,
+    "flagged": 23,
+    "mean_prob": 0.0051229281512652335,
+    "observed_vacant": 40,
+    "underreported": 5
+  },
+  {
+    "zip": 19151,
+    "total": 10551,
+    "flagged": 102,
+    "mean_prob": 0.011234802517864056,
+    "observed_vacant": 119,
+    "underreported": 23
+  },
+  {
+    "zip": 19152,
+    "total": 9757,
+    "flagged": 7,
+    "mean_prob": 0.001925282569671215,
+    "observed_vacant": 11,
+    "underreported": 3
+  },
+  {
+    "zip": 19153,
+    "total": 3756,
+    "flagged": 25,
+    "mean_prob": 0.006503265970955567,
+    "observed_vacant": 33,
+    "underreported": 4
+  },
+  {
+    "zip": 19154,
+    "total": 10774,
+    "flagged": 7,
+    "mean_prob": 0.0015782264051228281,
+    "observed_vacant": 20,
+    "underreported": 1
+  }
+]

@@ -1,0 +1,2554 @@
+[
+  {
+    "tract": 1,
+    "total": 259,
+    "flagged": 2,
+    "mean_prob": 0.009986355986821563,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 2,
+    "total": 168,
+    "flagged": 0,
+    "mean_prob": 0.004412521182817792,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 3,
+    "total": 77,
+    "flagged": 0,
+    "mean_prob": 0.004819461088544135,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 4,
+    "total": 68,
+    "flagged": 0,
+    "mean_prob": 0.005960822081954523,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 5,
+    "total": 39,
+    "flagged": 0,
+    "mean_prob": 0.007396858916051303,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 6,
+    "total": 83,
+    "flagged": 0,
+    "mean_prob": 0.008781341674149954,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 7,
+    "total": 144,
+    "flagged": 0,
+    "mean_prob": 0.008468615295664603,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 8,
+    "total": 233,
+    "flagged": 1,
+    "mean_prob": 0.007501456179217818,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 9,
+    "total": 182,
+    "flagged": 0,
+    "mean_prob": 0.010218014040911293,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 10,
+    "total": 209,
+    "flagged": 0,
+    "mean_prob": 0.005158988007591622,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 11,
+    "total": 286,
+    "flagged": 0,
+    "mean_prob": 0.007245333721402281,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 12,
+    "total": 1097,
+    "flagged": 1,
+    "mean_prob": 0.0038547460270973127,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 13,
+    "total": 2143,
+    "flagged": 9,
+    "mean_prob": 0.0052199181459545475,
+    "observed_vacant": 15,
+    "underreported": 1
+  },
+  {
+    "tract": 14,
+    "total": 1568,
+    "flagged": 4,
+    "mean_prob": 0.003513794390151646,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 15,
+    "total": 192,
+    "flagged": 1,
+    "mean_prob": 0.011713757248220692,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 16,
+    "total": 222,
+    "flagged": 0,
+    "mean_prob": 0.005517595322581912,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 17,
+    "total": 113,
+    "flagged": 0,
+    "mean_prob": 0.0021008975209923075,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 18,
+    "total": 159,
+    "flagged": 0,
+    "mean_prob": 0.0029825984426903327,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 19,
+    "total": 1334,
+    "flagged": 3,
+    "mean_prob": 0.0026860629525049073,
+    "observed_vacant": 5,
+    "underreported": 1
+  },
+  {
+    "tract": 20,
+    "total": 1233,
+    "flagged": 9,
+    "mean_prob": 0.008922661426795294,
+    "observed_vacant": 16,
+    "underreported": 2
+  },
+  {
+    "tract": 21,
+    "total": 1179,
+    "flagged": 8,
+    "mean_prob": 0.008171993089511916,
+    "observed_vacant": 16,
+    "underreported": 2
+  },
+  {
+    "tract": 22,
+    "total": 949,
+    "flagged": 5,
+    "mean_prob": 0.006828211550998849,
+    "observed_vacant": 10,
+    "underreported": 1
+  },
+  {
+    "tract": 23,
+    "total": 79,
+    "flagged": 0,
+    "mean_prob": 0.00448670724359266,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 24,
+    "total": 261,
+    "flagged": 1,
+    "mean_prob": 0.005880826375569679,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 25,
+    "total": 75,
+    "flagged": 0,
+    "mean_prob": 0.004772609563910369,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 27,
+    "total": 112,
+    "flagged": 0,
+    "mean_prob": 0.009372520252209998,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 28,
+    "total": 590,
+    "flagged": 2,
+    "mean_prob": 0.005252172053337049,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 29,
+    "total": 838,
+    "flagged": 0,
+    "mean_prob": 0.0025634931224677283,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 30,
+    "total": 3011,
+    "flagged": 14,
+    "mean_prob": 0.006079135702240305,
+    "observed_vacant": 26,
+    "underreported": 3
+  },
+  {
+    "tract": 31,
+    "total": 2658,
+    "flagged": 23,
+    "mean_prob": 0.011104612167991452,
+    "observed_vacant": 33,
+    "underreported": 2
+  },
+  {
+    "tract": 32,
+    "total": 2426,
+    "flagged": 25,
+    "mean_prob": 0.013025670798651516,
+    "observed_vacant": 35,
+    "underreported": 4
+  },
+  {
+    "tract": 33,
+    "total": 2818,
+    "flagged": 22,
+    "mean_prob": 0.011921143030893575,
+    "observed_vacant": 29,
+    "underreported": 6
+  },
+  {
+    "tract": 36,
+    "total": 1559,
+    "flagged": 13,
+    "mean_prob": 0.008249124107477425,
+    "observed_vacant": 17,
+    "underreported": 3
+  },
+  {
+    "tract": 37,
+    "total": 4038,
+    "flagged": 29,
+    "mean_prob": 0.009746803829944377,
+    "observed_vacant": 44,
+    "underreported": 4
+  },
+  {
+    "tract": 38,
+    "total": 1585,
+    "flagged": 3,
+    "mean_prob": 0.0031087024415170066,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 39,
+    "total": 4763,
+    "flagged": 13,
+    "mean_prob": 0.004272964365318237,
+    "observed_vacant": 24,
+    "underreported": 2
+  },
+  {
+    "tract": 40,
+    "total": 4037,
+    "flagged": 9,
+    "mean_prob": 0.0035842989348324303,
+    "observed_vacant": 17,
+    "underreported": 1
+  },
+  {
+    "tract": 41,
+    "total": 5222,
+    "flagged": 23,
+    "mean_prob": 0.006616144498993947,
+    "observed_vacant": 45,
+    "underreported": 8
+  },
+  {
+    "tract": 42,
+    "total": 4128,
+    "flagged": 17,
+    "mean_prob": 0.005512805180752626,
+    "observed_vacant": 31,
+    "underreported": 3
+  },
+  {
+    "tract": 54,
+    "total": 277,
+    "flagged": 1,
+    "mean_prob": 0.003199636113184558,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 55,
+    "total": 1924,
+    "flagged": 13,
+    "mean_prob": 0.0068604239284508865,
+    "observed_vacant": 17,
+    "underreported": 1
+  },
+  {
+    "tract": 56,
+    "total": 118,
+    "flagged": 4,
+    "mean_prob": 0.02412726717438973,
+    "observed_vacant": 4,
+    "underreported": 1
+  },
+  {
+    "tract": 60,
+    "total": 2278,
+    "flagged": 18,
+    "mean_prob": 0.00894028227001413,
+    "observed_vacant": 21,
+    "underreported": 6
+  },
+  {
+    "tract": 61,
+    "total": 1147,
+    "flagged": 7,
+    "mean_prob": 0.008370026165046951,
+    "observed_vacant": 9,
+    "underreported": 0
+  },
+  {
+    "tract": 62,
+    "total": 1553,
+    "flagged": 17,
+    "mean_prob": 0.01495939520968899,
+    "observed_vacant": 17,
+    "underreported": 4
+  },
+  {
+    "tract": 63,
+    "total": 1373,
+    "flagged": 53,
+    "mean_prob": 0.03920172200954144,
+    "observed_vacant": 46,
+    "underreported": 18
+  },
+  {
+    "tract": 64,
+    "total": 1463,
+    "flagged": 23,
+    "mean_prob": 0.01706459172686857,
+    "observed_vacant": 25,
+    "underreported": 6
+  },
+  {
+    "tract": 65,
+    "total": 629,
+    "flagged": 22,
+    "mean_prob": 0.043317864364745724,
+    "observed_vacant": 31,
+    "underreported": 1
+  },
+  {
+    "tract": 66,
+    "total": 1218,
+    "flagged": 50,
+    "mean_prob": 0.039390373082177514,
+    "observed_vacant": 43,
+    "underreported": 18
+  },
+  {
+    "tract": 67,
+    "total": 2602,
+    "flagged": 50,
+    "mean_prob": 0.020286043866973018,
+    "observed_vacant": 49,
+    "underreported": 12
+  },
+  {
+    "tract": 70,
+    "total": 1654,
+    "flagged": 49,
+    "mean_prob": 0.03185400201258125,
+    "observed_vacant": 44,
+    "underreported": 16
+  },
+  {
+    "tract": 71,
+    "total": 2946,
+    "flagged": 85,
+    "mean_prob": 0.036600727180187025,
+    "observed_vacant": 79,
+    "underreported": 22
+  },
+  {
+    "tract": 72,
+    "total": 1836,
+    "flagged": 54,
+    "mean_prob": 0.03331378710141132,
+    "observed_vacant": 48,
+    "underreported": 14
+  },
+  {
+    "tract": 73,
+    "total": 1112,
+    "flagged": 25,
+    "mean_prob": 0.028606207311512314,
+    "observed_vacant": 31,
+    "underreported": 3
+  },
+  {
+    "tract": 74,
+    "total": 1668,
+    "flagged": 46,
+    "mean_prob": 0.029956505470146826,
+    "observed_vacant": 51,
+    "underreported": 14
+  },
+  {
+    "tract": 77,
+    "total": 339,
+    "flagged": 4,
+    "mean_prob": 0.013668734290220414,
+    "observed_vacant": 7,
+    "underreported": 0
+  },
+  {
+    "tract": 78,
+    "total": 911,
+    "flagged": 5,
+    "mean_prob": 0.01217332425031085,
+    "observed_vacant": 8,
+    "underreported": 0
+  },
+  {
+    "tract": 79,
+    "total": 1108,
+    "flagged": 4,
+    "mean_prob": 0.00626447887498605,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 80,
+    "total": 1481,
+    "flagged": 25,
+    "mean_prob": 0.020020405044613034,
+    "observed_vacant": 34,
+    "underreported": 6
+  },
+  {
+    "tract": 81,
+    "total": 3087,
+    "flagged": 62,
+    "mean_prob": 0.026766361693141116,
+    "observed_vacant": 66,
+    "underreported": 11
+  },
+  {
+    "tract": 82,
+    "total": 81,
+    "flagged": 1,
+    "mean_prob": 0.020203458936619213,
+    "observed_vacant": 0,
+    "underreported": 1
+  },
+  {
+    "tract": 83,
+    "total": 522,
+    "flagged": 13,
+    "mean_prob": 0.03188363560275841,
+    "observed_vacant": 12,
+    "underreported": 4
+  },
+  {
+    "tract": 84,
+    "total": 1703,
+    "flagged": 36,
+    "mean_prob": 0.024838900788959978,
+    "observed_vacant": 36,
+    "underreported": 6
+  },
+  {
+    "tract": 85,
+    "total": 2352,
+    "flagged": 43,
+    "mean_prob": 0.023271764645028854,
+    "observed_vacant": 56,
+    "underreported": 9
+  },
+  {
+    "tract": 86,
+    "total": 998,
+    "flagged": 12,
+    "mean_prob": 0.01625971055034668,
+    "observed_vacant": 21,
+    "underreported": 1
+  },
+  {
+    "tract": 87,
+    "total": 970,
+    "flagged": 3,
+    "mean_prob": 0.006829015712880967,
+    "observed_vacant": 4,
+    "underreported": 1
+  },
+  {
+    "tract": 88,
+    "total": 445,
+    "flagged": 1,
+    "mean_prob": 0.007021962740416283,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 90,
+    "total": 450,
+    "flagged": 2,
+    "mean_prob": 0.008017725387345956,
+    "observed_vacant": 3,
+    "underreported": 1
+  },
+  {
+    "tract": 91,
+    "total": 540,
+    "flagged": 4,
+    "mean_prob": 0.008879859921517467,
+    "observed_vacant": 7,
+    "underreported": 0
+  },
+  {
+    "tract": 92,
+    "total": 71,
+    "flagged": 1,
+    "mean_prob": 0.011479224842161316,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 93,
+    "total": 1722,
+    "flagged": 57,
+    "mean_prob": 0.03627725578456974,
+    "observed_vacant": 53,
+    "underreported": 14
+  },
+  {
+    "tract": 94,
+    "total": 71,
+    "flagged": 4,
+    "mean_prob": 0.0562203058019935,
+    "observed_vacant": 3,
+    "underreported": 1
+  },
+  {
+    "tract": 95,
+    "total": 86,
+    "flagged": 0,
+    "mean_prob": 0.01750046763248577,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 96,
+    "total": 1783,
+    "flagged": 43,
+    "mean_prob": 0.031021013610202843,
+    "observed_vacant": 49,
+    "underreported": 8
+  },
+  {
+    "tract": 98,
+    "total": 2747,
+    "flagged": 9,
+    "mean_prob": 0.0035403600730515585,
+    "observed_vacant": 12,
+    "underreported": 1
+  },
+  {
+    "tract": 100,
+    "total": 1483,
+    "flagged": 6,
+    "mean_prob": 0.005809689245300085,
+    "observed_vacant": 10,
+    "underreported": 1
+  },
+  {
+    "tract": 101,
+    "total": 2233,
+    "flagged": 47,
+    "mean_prob": 0.023881184368949447,
+    "observed_vacant": 50,
+    "underreported": 11
+  },
+  {
+    "tract": 102,
+    "total": 46,
+    "flagged": 1,
+    "mean_prob": 0.0394958745805589,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 103,
+    "total": 997,
+    "flagged": 49,
+    "mean_prob": 0.05057923031110113,
+    "observed_vacant": 44,
+    "underreported": 14
+  },
+  {
+    "tract": 104,
+    "total": 1256,
+    "flagged": 52,
+    "mean_prob": 0.044020423128584334,
+    "observed_vacant": 38,
+    "underreported": 22
+  },
+  {
+    "tract": 105,
+    "total": 155,
+    "flagged": 0,
+    "mean_prob": 0.0039051621832919842,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 106,
+    "total": 95,
+    "flagged": 1,
+    "mean_prob": 0.023704596509723504,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 107,
+    "total": 195,
+    "flagged": 3,
+    "mean_prob": 0.02234282831052565,
+    "observed_vacant": 5,
+    "underreported": 1
+  },
+  {
+    "tract": 108,
+    "total": 1476,
+    "flagged": 38,
+    "mean_prob": 0.027581539205871395,
+    "observed_vacant": 36,
+    "underreported": 11
+  },
+  {
+    "tract": 109,
+    "total": 674,
+    "flagged": 3,
+    "mean_prob": 0.008405942845038076,
+    "observed_vacant": 8,
+    "underreported": 1
+  },
+  {
+    "tract": 110,
+    "total": 621,
+    "flagged": 29,
+    "mean_prob": 0.05245192883195664,
+    "observed_vacant": 36,
+    "underreported": 3
+  },
+  {
+    "tract": 111,
+    "total": 1495,
+    "flagged": 60,
+    "mean_prob": 0.04302911044972199,
+    "observed_vacant": 61,
+    "underreported": 13
+  },
+  {
+    "tract": 112,
+    "total": 83,
+    "flagged": 0,
+    "mean_prob": 0.008026617562993317,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 113,
+    "total": 30,
+    "flagged": 0,
+    "mean_prob": 0.014592676572363817,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 114,
+    "total": 2056,
+    "flagged": 26,
+    "mean_prob": 0.015238341063908811,
+    "observed_vacant": 32,
+    "underreported": 6
+  },
+  {
+    "tract": 115,
+    "total": 1575,
+    "flagged": 12,
+    "mean_prob": 0.009097995638676361,
+    "observed_vacant": 14,
+    "underreported": 2
+  },
+  {
+    "tract": 117,
+    "total": 325,
+    "flagged": 0,
+    "mean_prob": 0.002589470717199438,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 118,
+    "total": 2141,
+    "flagged": 29,
+    "mean_prob": 0.01665962297245696,
+    "observed_vacant": 34,
+    "underreported": 4
+  },
+  {
+    "tract": 119,
+    "total": 1678,
+    "flagged": 18,
+    "mean_prob": 0.01588132182183001,
+    "observed_vacant": 24,
+    "underreported": 1
+  },
+  {
+    "tract": 120,
+    "total": 406,
+    "flagged": 2,
+    "mean_prob": 0.007611424683656509,
+    "observed_vacant": 1,
+    "underreported": 1
+  },
+  {
+    "tract": 121,
+    "total": 563,
+    "flagged": 3,
+    "mean_prob": 0.00813304498802307,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 122,
+    "total": 700,
+    "flagged": 3,
+    "mean_prob": 0.005125038448227227,
+    "observed_vacant": 3,
+    "underreported": 1
+  },
+  {
+    "tract": 125,
+    "total": 64,
+    "flagged": 0,
+    "mean_prob": 0.005130003151497799,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 131,
+    "total": 177,
+    "flagged": 1,
+    "mean_prob": 0.0026696525933024872,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 132,
+    "total": 475,
+    "flagged": 1,
+    "mean_prob": 0.0034524898615545018,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 133,
+    "total": 518,
+    "flagged": 4,
+    "mean_prob": 0.007401825839184351,
+    "observed_vacant": 2,
+    "underreported": 2
+  },
+  {
+    "tract": 134,
+    "total": 1098,
+    "flagged": 0,
+    "mean_prob": 0.0019189472687500355,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 135,
+    "total": 1377,
+    "flagged": 6,
+    "mean_prob": 0.005428065444399055,
+    "observed_vacant": 10,
+    "underreported": 1
+  },
+  {
+    "tract": 136,
+    "total": 2396,
+    "flagged": 2,
+    "mean_prob": 0.0018189099870179728,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 137,
+    "total": 2396,
+    "flagged": 51,
+    "mean_prob": 0.02527260775823674,
+    "observed_vacant": 57,
+    "underreported": 9
+  },
+  {
+    "tract": 138,
+    "total": 1005,
+    "flagged": 20,
+    "mean_prob": 0.021018165745970232,
+    "observed_vacant": 22,
+    "underreported": 4
+  },
+  {
+    "tract": 139,
+    "total": 487,
+    "flagged": 9,
+    "mean_prob": 0.01914558738012786,
+    "observed_vacant": 11,
+    "underreported": 0
+  },
+  {
+    "tract": 140,
+    "total": 958,
+    "flagged": 11,
+    "mean_prob": 0.013280341554299148,
+    "observed_vacant": 13,
+    "underreported": 1
+  },
+  {
+    "tract": 141,
+    "total": 409,
+    "flagged": 1,
+    "mean_prob": 0.0022426995067173876,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 142,
+    "total": 148,
+    "flagged": 0,
+    "mean_prob": 0.003142699971403109,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 143,
+    "total": 794,
+    "flagged": 1,
+    "mean_prob": 0.0029348205181265016,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 144,
+    "total": 1489,
+    "flagged": 4,
+    "mean_prob": 0.004241276071307027,
+    "observed_vacant": 12,
+    "underreported": 1
+  },
+  {
+    "tract": 145,
+    "total": 493,
+    "flagged": 0,
+    "mean_prob": 0.001764152817080073,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 146,
+    "total": 630,
+    "flagged": 3,
+    "mean_prob": 0.0068404364520521935,
+    "observed_vacant": 6,
+    "underreported": 1
+  },
+  {
+    "tract": 147,
+    "total": 654,
+    "flagged": 4,
+    "mean_prob": 0.009398709191003784,
+    "observed_vacant": 4,
+    "underreported": 2
+  },
+  {
+    "tract": 148,
+    "total": 292,
+    "flagged": 8,
+    "mean_prob": 0.026550564997928423,
+    "observed_vacant": 7,
+    "underreported": 2
+  },
+  {
+    "tract": 149,
+    "total": 1741,
+    "flagged": 56,
+    "mean_prob": 0.032621681712389494,
+    "observed_vacant": 66,
+    "underreported": 13
+  },
+  {
+    "tract": 151,
+    "total": 2291,
+    "flagged": 92,
+    "mean_prob": 0.042853706968069574,
+    "observed_vacant": 96,
+    "underreported": 16
+  },
+  {
+    "tract": 152,
+    "total": 1250,
+    "flagged": 64,
+    "mean_prob": 0.04543099870965317,
+    "observed_vacant": 47,
+    "underreported": 26
+  },
+  {
+    "tract": 153,
+    "total": 1330,
+    "flagged": 18,
+    "mean_prob": 0.014779970105250164,
+    "observed_vacant": 23,
+    "underreported": 3
+  },
+  {
+    "tract": 156,
+    "total": 770,
+    "flagged": 3,
+    "mean_prob": 0.006810645705378665,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 157,
+    "total": 1207,
+    "flagged": 3,
+    "mean_prob": 0.004360227964669357,
+    "observed_vacant": 6,
+    "underreported": 0
+  },
+  {
+    "tract": 158,
+    "total": 2640,
+    "flagged": 5,
+    "mean_prob": 0.003782205676065932,
+    "observed_vacant": 11,
+    "underreported": 1
+  },
+  {
+    "tract": 160,
+    "total": 3244,
+    "flagged": 17,
+    "mean_prob": 0.008009175102048837,
+    "observed_vacant": 27,
+    "underreported": 2
+  },
+  {
+    "tract": 161,
+    "total": 2634,
+    "flagged": 21,
+    "mean_prob": 0.010449743941169872,
+    "observed_vacant": 30,
+    "underreported": 4
+  },
+  {
+    "tract": 162,
+    "total": 766,
+    "flagged": 3,
+    "mean_prob": 0.007907223817094675,
+    "observed_vacant": 5,
+    "underreported": 1
+  },
+  {
+    "tract": 163,
+    "total": 1148,
+    "flagged": 16,
+    "mean_prob": 0.015782950866262486,
+    "observed_vacant": 17,
+    "underreported": 5
+  },
+  {
+    "tract": 164,
+    "total": 1423,
+    "flagged": 11,
+    "mean_prob": 0.011460733731709463,
+    "observed_vacant": 17,
+    "underreported": 3
+  },
+  {
+    "tract": 165,
+    "total": 948,
+    "flagged": 50,
+    "mean_prob": 0.053856821483528154,
+    "observed_vacant": 55,
+    "underreported": 6
+  },
+  {
+    "tract": 166,
+    "total": 474,
+    "flagged": 10,
+    "mean_prob": 0.021232691865894725,
+    "observed_vacant": 13,
+    "underreported": 1
+  },
+  {
+    "tract": 167,
+    "total": 2745,
+    "flagged": 75,
+    "mean_prob": 0.04098971790035061,
+    "observed_vacant": 108,
+    "underreported": 0
+  },
+  {
+    "tract": 168,
+    "total": 1621,
+    "flagged": 38,
+    "mean_prob": 0.032490376171777385,
+    "observed_vacant": 53,
+    "underreported": 0
+  },
+  {
+    "tract": 169,
+    "total": 4038,
+    "flagged": 102,
+    "mean_prob": 0.03903476797630543,
+    "observed_vacant": 146,
+    "underreported": 0
+  },
+  {
+    "tract": 170,
+    "total": 660,
+    "flagged": 9,
+    "mean_prob": 0.018312328127183957,
+    "observed_vacant": 14,
+    "underreported": 1
+  },
+  {
+    "tract": 171,
+    "total": 1751,
+    "flagged": 41,
+    "mean_prob": 0.027431936849404495,
+    "observed_vacant": 52,
+    "underreported": 3
+  },
+  {
+    "tract": 172,
+    "total": 3341,
+    "flagged": 94,
+    "mean_prob": 0.03986594938400597,
+    "observed_vacant": 149,
+    "underreported": 0
+  },
+  {
+    "tract": 173,
+    "total": 1210,
+    "flagged": 24,
+    "mean_prob": 0.025872765641510524,
+    "observed_vacant": 44,
+    "underreported": 0
+  },
+  {
+    "tract": 174,
+    "total": 887,
+    "flagged": 29,
+    "mean_prob": 0.03651761277441297,
+    "observed_vacant": 35,
+    "underreported": 7
+  },
+  {
+    "tract": 175,
+    "total": 2394,
+    "flagged": 49,
+    "mean_prob": 0.022153803245622862,
+    "observed_vacant": 46,
+    "underreported": 15
+  },
+  {
+    "tract": 176,
+    "total": 1037,
+    "flagged": 13,
+    "mean_prob": 0.015437568926778162,
+    "observed_vacant": 10,
+    "underreported": 6
+  },
+  {
+    "tract": 177,
+    "total": 1369,
+    "flagged": 101,
+    "mean_prob": 0.07288719047972932,
+    "observed_vacant": 87,
+    "underreported": 26
+  },
+  {
+    "tract": 178,
+    "total": 2245,
+    "flagged": 112,
+    "mean_prob": 0.05510945232233943,
+    "observed_vacant": 114,
+    "underreported": 28
+  },
+  {
+    "tract": 179,
+    "total": 2490,
+    "flagged": 44,
+    "mean_prob": 0.02333753004956077,
+    "observed_vacant": 54,
+    "underreported": 5
+  },
+  {
+    "tract": 180,
+    "total": 3565,
+    "flagged": 21,
+    "mean_prob": 0.009890617573035613,
+    "observed_vacant": 35,
+    "underreported": 3
+  },
+  {
+    "tract": 183,
+    "total": 1746,
+    "flagged": 4,
+    "mean_prob": 0.0038604034269219085,
+    "observed_vacant": 6,
+    "underreported": 0
+  },
+  {
+    "tract": 184,
+    "total": 848,
+    "flagged": 7,
+    "mean_prob": 0.008878190830247972,
+    "observed_vacant": 8,
+    "underreported": 3
+  },
+  {
+    "tract": 188,
+    "total": 2617,
+    "flagged": 86,
+    "mean_prob": 0.035565333493361884,
+    "observed_vacant": 85,
+    "underreported": 21
+  },
+  {
+    "tract": 190,
+    "total": 2198,
+    "flagged": 9,
+    "mean_prob": 0.006779572811855973,
+    "observed_vacant": 11,
+    "underreported": 3
+  },
+  {
+    "tract": 191,
+    "total": 2662,
+    "flagged": 8,
+    "mean_prob": 0.004577959486546662,
+    "observed_vacant": 13,
+    "underreported": 2
+  },
+  {
+    "tract": 192,
+    "total": 1929,
+    "flagged": 76,
+    "mean_prob": 0.04589753674148247,
+    "observed_vacant": 79,
+    "underreported": 7
+  },
+  {
+    "tract": 195,
+    "total": 964,
+    "flagged": 9,
+    "mean_prob": 0.01708687248820741,
+    "observed_vacant": 12,
+    "underreported": 2
+  },
+  {
+    "tract": 197,
+    "total": 2290,
+    "flagged": 23,
+    "mean_prob": 0.013207959535127373,
+    "observed_vacant": 28,
+    "underreported": 7
+  },
+  {
+    "tract": 198,
+    "total": 2041,
+    "flagged": 19,
+    "mean_prob": 0.01563179340526504,
+    "observed_vacant": 28,
+    "underreported": 2
+  },
+  {
+    "tract": 199,
+    "total": 1518,
+    "flagged": 35,
+    "mean_prob": 0.023131885210894945,
+    "observed_vacant": 23,
+    "underreported": 13
+  },
+  {
+    "tract": 200,
+    "total": 466,
+    "flagged": 13,
+    "mean_prob": 0.031873473077988095,
+    "observed_vacant": 14,
+    "underreported": 4
+  },
+  {
+    "tract": 201,
+    "total": 2477,
+    "flagged": 131,
+    "mean_prob": 0.055954719810546845,
+    "observed_vacant": 127,
+    "underreported": 28
+  },
+  {
+    "tract": 202,
+    "total": 1707,
+    "flagged": 96,
+    "mean_prob": 0.06060832429835065,
+    "observed_vacant": 84,
+    "underreported": 25
+  },
+  {
+    "tract": 203,
+    "total": 1031,
+    "flagged": 51,
+    "mean_prob": 0.048826266048161204,
+    "observed_vacant": 51,
+    "underreported": 8
+  },
+  {
+    "tract": 204,
+    "total": 1212,
+    "flagged": 55,
+    "mean_prob": 0.03932805897330173,
+    "observed_vacant": 46,
+    "underreported": 16
+  },
+  {
+    "tract": 205,
+    "total": 1102,
+    "flagged": 39,
+    "mean_prob": 0.0343567911500909,
+    "observed_vacant": 30,
+    "underreported": 14
+  },
+  {
+    "tract": 206,
+    "total": 284,
+    "flagged": 0,
+    "mean_prob": 0.0014183103462524892,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 207,
+    "total": 2263,
+    "flagged": 2,
+    "mean_prob": 0.002671983066529271,
+    "observed_vacant": 7,
+    "underreported": 0
+  },
+  {
+    "tract": 208,
+    "total": 103,
+    "flagged": 0,
+    "mean_prob": 0.004123177273565128,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 209,
+    "total": 1074,
+    "flagged": 4,
+    "mean_prob": 0.005811324857863727,
+    "observed_vacant": 6,
+    "underreported": 1
+  },
+  {
+    "tract": 210,
+    "total": 2110,
+    "flagged": 3,
+    "mean_prob": 0.0032774239838827173,
+    "observed_vacant": 7,
+    "underreported": 1
+  },
+  {
+    "tract": 211,
+    "total": 980,
+    "flagged": 2,
+    "mean_prob": 0.0030769799979878712,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 212,
+    "total": 845,
+    "flagged": 0,
+    "mean_prob": 0.0019361621648346474,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 213,
+    "total": 1355,
+    "flagged": 1,
+    "mean_prob": 0.0030730847952621116,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 214,
+    "total": 1702,
+    "flagged": 8,
+    "mean_prob": 0.006786356749481116,
+    "observed_vacant": 13,
+    "underreported": 1
+  },
+  {
+    "tract": 215,
+    "total": 1681,
+    "flagged": 3,
+    "mean_prob": 0.0030125980171687825,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 216,
+    "total": 544,
+    "flagged": 0,
+    "mean_prob": 0.0019414468998668003,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 217,
+    "total": 2185,
+    "flagged": 0,
+    "mean_prob": 0.0007820176865835539,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 218,
+    "total": 621,
+    "flagged": 5,
+    "mean_prob": 0.005479822438273444,
+    "observed_vacant": 6,
+    "underreported": 1
+  },
+  {
+    "tract": 219,
+    "total": 443,
+    "flagged": 2,
+    "mean_prob": 0.002353841776801212,
+    "observed_vacant": 1,
+    "underreported": 1
+  },
+  {
+    "tract": 220,
+    "total": 434,
+    "flagged": 0,
+    "mean_prob": 0.0007366728343632582,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 231,
+    "total": 32,
+    "flagged": 0,
+    "mean_prob": 0.00797875902393723,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 235,
+    "total": 427,
+    "flagged": 3,
+    "mean_prob": 0.006581774025846585,
+    "observed_vacant": 3,
+    "underreported": 1
+  },
+  {
+    "tract": 236,
+    "total": 738,
+    "flagged": 4,
+    "mean_prob": 0.0053287298133228925,
+    "observed_vacant": 3,
+    "underreported": 1
+  },
+  {
+    "tract": 237,
+    "total": 1071,
+    "flagged": 6,
+    "mean_prob": 0.007855821047449552,
+    "observed_vacant": 8,
+    "underreported": 2
+  },
+  {
+    "tract": 238,
+    "total": 1115,
+    "flagged": 11,
+    "mean_prob": 0.01291590588389284,
+    "observed_vacant": 17,
+    "underreported": 2
+  },
+  {
+    "tract": 239,
+    "total": 123,
+    "flagged": 0,
+    "mean_prob": 0.0030240746228403833,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 240,
+    "total": 850,
+    "flagged": 17,
+    "mean_prob": 0.021782577358810208,
+    "observed_vacant": 23,
+    "underreported": 4
+  },
+  {
+    "tract": 241,
+    "total": 206,
+    "flagged": 0,
+    "mean_prob": 0.006627683373938632,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 242,
+    "total": 1245,
+    "flagged": 26,
+    "mean_prob": 0.02538860929659367,
+    "observed_vacant": 30,
+    "underreported": 9
+  },
+  {
+    "tract": 243,
+    "total": 1135,
+    "flagged": 16,
+    "mean_prob": 0.017162229238570716,
+    "observed_vacant": 17,
+    "underreported": 4
+  },
+  {
+    "tract": 244,
+    "total": 1032,
+    "flagged": 22,
+    "mean_prob": 0.021402425427375266,
+    "observed_vacant": 20,
+    "underreported": 8
+  },
+  {
+    "tract": 245,
+    "total": 1298,
+    "flagged": 46,
+    "mean_prob": 0.03810489742265775,
+    "observed_vacant": 39,
+    "underreported": 17
+  },
+  {
+    "tract": 246,
+    "total": 746,
+    "flagged": 17,
+    "mean_prob": 0.02556678340422298,
+    "observed_vacant": 15,
+    "underreported": 8
+  },
+  {
+    "tract": 247,
+    "total": 1544,
+    "flagged": 45,
+    "mean_prob": 0.03017478338548118,
+    "observed_vacant": 41,
+    "underreported": 14
+  },
+  {
+    "tract": 248,
+    "total": 735,
+    "flagged": 17,
+    "mean_prob": 0.03509839646130322,
+    "observed_vacant": 18,
+    "underreported": 3
+  },
+  {
+    "tract": 249,
+    "total": 1310,
+    "flagged": 22,
+    "mean_prob": 0.02813661757530017,
+    "observed_vacant": 22,
+    "underreported": 3
+  },
+  {
+    "tract": 252,
+    "total": 2257,
+    "flagged": 37,
+    "mean_prob": 0.023783039896389784,
+    "observed_vacant": 35,
+    "underreported": 7
+  },
+  {
+    "tract": 253,
+    "total": 1639,
+    "flagged": 20,
+    "mean_prob": 0.017860987103969054,
+    "observed_vacant": 23,
+    "underreported": 3
+  },
+  {
+    "tract": 254,
+    "total": 1440,
+    "flagged": 3,
+    "mean_prob": 0.0050323046399746,
+    "observed_vacant": 6,
+    "underreported": 0
+  },
+  {
+    "tract": 255,
+    "total": 919,
+    "flagged": 3,
+    "mean_prob": 0.006197562334127801,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 256,
+    "total": 22,
+    "flagged": 0,
+    "mean_prob": 0.004687404256530223,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 257,
+    "total": 36,
+    "flagged": 0,
+    "mean_prob": 0.0036290753904136006,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 258,
+    "total": 644,
+    "flagged": 1,
+    "mean_prob": 0.0026382560917182687,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 259,
+    "total": 1704,
+    "flagged": 5,
+    "mean_prob": 0.005253418806823357,
+    "observed_vacant": 8,
+    "underreported": 0
+  },
+  {
+    "tract": 260,
+    "total": 1125,
+    "flagged": 3,
+    "mean_prob": 0.0052090882318341246,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 261,
+    "total": 1149,
+    "flagged": 6,
+    "mean_prob": 0.005993415728062035,
+    "observed_vacant": 7,
+    "underreported": 2
+  },
+  {
+    "tract": 262,
+    "total": 1654,
+    "flagged": 6,
+    "mean_prob": 0.004692170251067853,
+    "observed_vacant": 9,
+    "underreported": 2
+  },
+  {
+    "tract": 263,
+    "total": 3506,
+    "flagged": 7,
+    "mean_prob": 0.006772437156303858,
+    "observed_vacant": 14,
+    "underreported": 2
+  },
+  {
+    "tract": 264,
+    "total": 2099,
+    "flagged": 12,
+    "mean_prob": 0.010455700152539951,
+    "observed_vacant": 15,
+    "underreported": 2
+  },
+  {
+    "tract": 265,
+    "total": 1710,
+    "flagged": 18,
+    "mean_prob": 0.017457625403833634,
+    "observed_vacant": 17,
+    "underreported": 6
+  },
+  {
+    "tract": 266,
+    "total": 2503,
+    "flagged": 13,
+    "mean_prob": 0.011083658259452595,
+    "observed_vacant": 14,
+    "underreported": 3
+  },
+  {
+    "tract": 267,
+    "total": 2443,
+    "flagged": 27,
+    "mean_prob": 0.018031840620893982,
+    "observed_vacant": 29,
+    "underreported": 4
+  },
+  {
+    "tract": 268,
+    "total": 901,
+    "flagged": 10,
+    "mean_prob": 0.01478003997097471,
+    "observed_vacant": 9,
+    "underreported": 2
+  },
+  {
+    "tract": 269,
+    "total": 487,
+    "flagged": 2,
+    "mean_prob": 0.005070312152387809,
+    "observed_vacant": 0,
+    "underreported": 2
+  },
+  {
+    "tract": 270,
+    "total": 608,
+    "flagged": 1,
+    "mean_prob": 0.002843230845020632,
+    "observed_vacant": 0,
+    "underreported": 1
+  },
+  {
+    "tract": 271,
+    "total": 817,
+    "flagged": 0,
+    "mean_prob": 0.002136327403356706,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 272,
+    "total": 1310,
+    "flagged": 4,
+    "mean_prob": 0.004350678456367691,
+    "observed_vacant": 3,
+    "underreported": 2
+  },
+  {
+    "tract": 273,
+    "total": 1827,
+    "flagged": 6,
+    "mean_prob": 0.008241056425661407,
+    "observed_vacant": 12,
+    "underreported": 0
+  },
+  {
+    "tract": 274,
+    "total": 3203,
+    "flagged": 18,
+    "mean_prob": 0.009034680601283056,
+    "observed_vacant": 22,
+    "underreported": 5
+  },
+  {
+    "tract": 275,
+    "total": 1565,
+    "flagged": 3,
+    "mean_prob": 0.007408168727914581,
+    "observed_vacant": 6,
+    "underreported": 1
+  },
+  {
+    "tract": 276,
+    "total": 1106,
+    "flagged": 15,
+    "mean_prob": 0.01526000796840935,
+    "observed_vacant": 15,
+    "underreported": 4
+  },
+  {
+    "tract": 277,
+    "total": 1624,
+    "flagged": 30,
+    "mean_prob": 0.021919959497563497,
+    "observed_vacant": 24,
+    "underreported": 10
+  },
+  {
+    "tract": 278,
+    "total": 1465,
+    "flagged": 15,
+    "mean_prob": 0.013912322254569436,
+    "observed_vacant": 23,
+    "underreported": 2
+  },
+  {
+    "tract": 279,
+    "total": 2258,
+    "flagged": 36,
+    "mean_prob": 0.02093012922994616,
+    "observed_vacant": 37,
+    "underreported": 12
+  },
+  {
+    "tract": 280,
+    "total": 1539,
+    "flagged": 18,
+    "mean_prob": 0.016257476291001105,
+    "observed_vacant": 12,
+    "underreported": 9
+  },
+  {
+    "tract": 281,
+    "total": 1244,
+    "flagged": 20,
+    "mean_prob": 0.018557230330243375,
+    "observed_vacant": 16,
+    "underreported": 7
+  },
+  {
+    "tract": 282,
+    "total": 1440,
+    "flagged": 25,
+    "mean_prob": 0.019860057179241632,
+    "observed_vacant": 25,
+    "underreported": 9
+  },
+  {
+    "tract": 283,
+    "total": 1872,
+    "flagged": 41,
+    "mean_prob": 0.027588105602168084,
+    "observed_vacant": 40,
+    "underreported": 12
+  },
+  {
+    "tract": 284,
+    "total": 1283,
+    "flagged": 14,
+    "mean_prob": 0.01534396807907906,
+    "observed_vacant": 11,
+    "underreported": 6
+  },
+  {
+    "tract": 285,
+    "total": 681,
+    "flagged": 5,
+    "mean_prob": 0.010355226936356656,
+    "observed_vacant": 5,
+    "underreported": 2
+  },
+  {
+    "tract": 286,
+    "total": 2147,
+    "flagged": 24,
+    "mean_prob": 0.014515997058686971,
+    "observed_vacant": 22,
+    "underreported": 7
+  },
+  {
+    "tract": 287,
+    "total": 761,
+    "flagged": 9,
+    "mean_prob": 0.014862382199973595,
+    "observed_vacant": 11,
+    "underreported": 4
+  },
+  {
+    "tract": 288,
+    "total": 1351,
+    "flagged": 17,
+    "mean_prob": 0.014903743980464124,
+    "observed_vacant": 13,
+    "underreported": 8
+  },
+  {
+    "tract": 289,
+    "total": 3053,
+    "flagged": 28,
+    "mean_prob": 0.012657264875820634,
+    "observed_vacant": 29,
+    "underreported": 9
+  },
+  {
+    "tract": 290,
+    "total": 1800,
+    "flagged": 14,
+    "mean_prob": 0.010294559970816367,
+    "observed_vacant": 14,
+    "underreported": 4
+  },
+  {
+    "tract": 291,
+    "total": 1190,
+    "flagged": 2,
+    "mean_prob": 0.007440189333080306,
+    "observed_vacant": 5,
+    "underreported": 1
+  },
+  {
+    "tract": 292,
+    "total": 1191,
+    "flagged": 6,
+    "mean_prob": 0.008973909212110066,
+    "observed_vacant": 7,
+    "underreported": 0
+  },
+  {
+    "tract": 293,
+    "total": 951,
+    "flagged": 14,
+    "mean_prob": 0.01827546212711126,
+    "observed_vacant": 15,
+    "underreported": 2
+  },
+  {
+    "tract": 294,
+    "total": 1075,
+    "flagged": 21,
+    "mean_prob": 0.024699894225093975,
+    "observed_vacant": 32,
+    "underreported": 3
+  },
+  {
+    "tract": 298,
+    "total": 1785,
+    "flagged": 8,
+    "mean_prob": 0.012016530102276775,
+    "observed_vacant": 10,
+    "underreported": 1
+  },
+  {
+    "tract": 299,
+    "total": 1433,
+    "flagged": 13,
+    "mean_prob": 0.013961903157268125,
+    "observed_vacant": 14,
+    "underreported": 4
+  },
+  {
+    "tract": 300,
+    "total": 2353,
+    "flagged": 44,
+    "mean_prob": 0.022895830189807134,
+    "observed_vacant": 44,
+    "underreported": 13
+  },
+  {
+    "tract": 301,
+    "total": 1404,
+    "flagged": 10,
+    "mean_prob": 0.01227167299568456,
+    "observed_vacant": 14,
+    "underreported": 1
+  },
+  {
+    "tract": 302,
+    "total": 2176,
+    "flagged": 6,
+    "mean_prob": 0.008658264572085215,
+    "observed_vacant": 10,
+    "underreported": 1
+  },
+  {
+    "tract": 305,
+    "total": 3543,
+    "flagged": 15,
+    "mean_prob": 0.009752188918098066,
+    "observed_vacant": 21,
+    "underreported": 3
+  },
+  {
+    "tract": 306,
+    "total": 1996,
+    "flagged": 4,
+    "mean_prob": 0.004991304072081753,
+    "observed_vacant": 6,
+    "underreported": 0
+  },
+  {
+    "tract": 307,
+    "total": 714,
+    "flagged": 1,
+    "mean_prob": 0.004028218436108876,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 308,
+    "total": 1548,
+    "flagged": 1,
+    "mean_prob": 0.002108348842270594,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 309,
+    "total": 1027,
+    "flagged": 2,
+    "mean_prob": 0.004567734770198761,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 310,
+    "total": 2008,
+    "flagged": 2,
+    "mean_prob": 0.003608606545659733,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 311,
+    "total": 2969,
+    "flagged": 3,
+    "mean_prob": 0.005445942987725357,
+    "observed_vacant": 9,
+    "underreported": 0
+  },
+  {
+    "tract": 312,
+    "total": 1369,
+    "flagged": 2,
+    "mean_prob": 0.005513033794277208,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 313,
+    "total": 1989,
+    "flagged": 0,
+    "mean_prob": 0.0034200464374180796,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 314,
+    "total": 3903,
+    "flagged": 2,
+    "mean_prob": 0.003636129283625642,
+    "observed_vacant": 6,
+    "underreported": 0
+  },
+  {
+    "tract": 315,
+    "total": 3493,
+    "flagged": 4,
+    "mean_prob": 0.0051720106857308015,
+    "observed_vacant": 6,
+    "underreported": 0
+  },
+  {
+    "tract": 316,
+    "total": 2147,
+    "flagged": 2,
+    "mean_prob": 0.004699876698456759,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 317,
+    "total": 2154,
+    "flagged": 3,
+    "mean_prob": 0.005362323505684506,
+    "observed_vacant": 6,
+    "underreported": 0
+  },
+  {
+    "tract": 318,
+    "total": 1313,
+    "flagged": 3,
+    "mean_prob": 0.005637383529287168,
+    "observed_vacant": 7,
+    "underreported": 0
+  },
+  {
+    "tract": 319,
+    "total": 1659,
+    "flagged": 2,
+    "mean_prob": 0.0050664570975058,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 320,
+    "total": 2423,
+    "flagged": 4,
+    "mean_prob": 0.005754675125564939,
+    "observed_vacant": 4,
+    "underreported": 1
+  },
+  {
+    "tract": 321,
+    "total": 1310,
+    "flagged": 11,
+    "mean_prob": 0.012991635656147105,
+    "observed_vacant": 12,
+    "underreported": 1
+  },
+  {
+    "tract": 323,
+    "total": 1360,
+    "flagged": 1,
+    "mean_prob": 0.007342389915990685,
+    "observed_vacant": 5,
+    "underreported": 1
+  },
+  {
+    "tract": 325,
+    "total": 1950,
+    "flagged": 8,
+    "mean_prob": 0.008039692416927613,
+    "observed_vacant": 10,
+    "underreported": 1
+  },
+  {
+    "tract": 326,
+    "total": 2411,
+    "flagged": 4,
+    "mean_prob": 0.004934306569504837,
+    "observed_vacant": 5,
+    "underreported": 1
+  },
+  {
+    "tract": 329,
+    "total": 1241,
+    "flagged": 2,
+    "mean_prob": 0.005136752218522552,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 330,
+    "total": 2737,
+    "flagged": 10,
+    "mean_prob": 0.007414163513727681,
+    "observed_vacant": 13,
+    "underreported": 2
+  },
+  {
+    "tract": 331,
+    "total": 3075,
+    "flagged": 7,
+    "mean_prob": 0.004990019975116828,
+    "observed_vacant": 8,
+    "underreported": 1
+  },
+  {
+    "tract": 332,
+    "total": 963,
+    "flagged": 0,
+    "mean_prob": 0.0021272628406486275,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 333,
+    "total": 1146,
+    "flagged": 1,
+    "mean_prob": 0.0014204629384149017,
+    "observed_vacant": 1,
+    "underreported": 1
+  },
+  {
+    "tract": 334,
+    "total": 1357,
+    "flagged": 2,
+    "mean_prob": 0.003082453396087019,
+    "observed_vacant": 4,
+    "underreported": 1
+  },
+  {
+    "tract": 335,
+    "total": 1181,
+    "flagged": 1,
+    "mean_prob": 0.0027810545597863703,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 336,
+    "total": 1878,
+    "flagged": 0,
+    "mean_prob": 0.0016693683993001648,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 337,
+    "total": 2973,
+    "flagged": 2,
+    "mean_prob": 0.0017581727529447568,
+    "observed_vacant": 3,
+    "underreported": 1
+  },
+  {
+    "tract": 338,
+    "total": 1760,
+    "flagged": 6,
+    "mean_prob": 0.004108519287851894,
+    "observed_vacant": 8,
+    "underreported": 1
+  },
+  {
+    "tract": 339,
+    "total": 970,
+    "flagged": 1,
+    "mean_prob": 0.002531386353910413,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 340,
+    "total": 1016,
+    "flagged": 0,
+    "mean_prob": 0.0009597775989177255,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 341,
+    "total": 1662,
+    "flagged": 0,
+    "mean_prob": 0.0012976160788880388,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 342,
+    "total": 877,
+    "flagged": 2,
+    "mean_prob": 0.0024599920934007358,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 344,
+    "total": 2546,
+    "flagged": 1,
+    "mean_prob": 0.001046367400153191,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 345,
+    "total": 1275,
+    "flagged": 1,
+    "mean_prob": 0.0017884286349324253,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 346,
+    "total": 117,
+    "flagged": 0,
+    "mean_prob": 0.0006627069576908539,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 347,
+    "total": 3355,
+    "flagged": 3,
+    "mean_prob": 0.0015648297099043,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 348,
+    "total": 3817,
+    "flagged": 2,
+    "mean_prob": 0.0020385147757402736,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 349,
+    "total": 1689,
+    "flagged": 7,
+    "mean_prob": 0.006181901135575055,
+    "observed_vacant": 7,
+    "underreported": 1
+  },
+  {
+    "tract": 351,
+    "total": 368,
+    "flagged": 0,
+    "mean_prob": 0.0012959795305224498,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 352,
+    "total": 1557,
+    "flagged": 1,
+    "mean_prob": 0.0013886008450458927,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 353,
+    "total": 3093,
+    "flagged": 2,
+    "mean_prob": 0.0017577302146999654,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 355,
+    "total": 2159,
+    "flagged": 0,
+    "mean_prob": 0.0007916582369696053,
+    "observed_vacant": 2,
+    "underreported": 0
+  },
+  {
+    "tract": 356,
+    "total": 2443,
+    "flagged": 2,
+    "mean_prob": 0.0010918012907314538,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 357,
+    "total": 2025,
+    "flagged": 1,
+    "mean_prob": 0.0014832267680738068,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 358,
+    "total": 1819,
+    "flagged": 2,
+    "mean_prob": 0.0017216855300763634,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 359,
+    "total": 1564,
+    "flagged": 2,
+    "mean_prob": 0.001336916048912947,
+    "observed_vacant": 1,
+    "underreported": 1
+  },
+  {
+    "tract": 360,
+    "total": 772,
+    "flagged": 0,
+    "mean_prob": 0.00087931116114138,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 361,
+    "total": 1068,
+    "flagged": 0,
+    "mean_prob": 0.0015681327680756205,
+    "observed_vacant": 4,
+    "underreported": 0
+  },
+  {
+    "tract": 362,
+    "total": 5209,
+    "flagged": 3,
+    "mean_prob": 0.0016491410119076227,
+    "observed_vacant": 10,
+    "underreported": 0
+  },
+  {
+    "tract": 363,
+    "total": 4602,
+    "flagged": 4,
+    "mean_prob": 0.0015067260670693805,
+    "observed_vacant": 6,
+    "underreported": 1
+  },
+  {
+    "tract": 364,
+    "total": 332,
+    "flagged": 0,
+    "mean_prob": 7.84566564170299e-05,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 365,
+    "total": 2575,
+    "flagged": 1,
+    "mean_prob": 0.0009825565471141657,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 366,
+    "total": 19,
+    "flagged": 0,
+    "mean_prob": 0.005029555655007273,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 367,
+    "total": 135,
+    "flagged": 0,
+    "mean_prob": 0.002191454932516628,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 369,
+    "total": 24,
+    "flagged": 0,
+    "mean_prob": 0.006645781735633696,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 372,
+    "total": 1812,
+    "flagged": 4,
+    "mean_prob": 0.004047266147862819,
+    "observed_vacant": 7,
+    "underreported": 0
+  },
+  {
+    "tract": 373,
+    "total": 1776,
+    "flagged": 1,
+    "mean_prob": 0.0013632346317701553,
+    "observed_vacant": 3,
+    "underreported": 0
+  },
+  {
+    "tract": 375,
+    "total": 835,
+    "flagged": 2,
+    "mean_prob": 0.005521132501210881,
+    "observed_vacant": 5,
+    "underreported": 0
+  },
+  {
+    "tract": 376,
+    "total": 254,
+    "flagged": 0,
+    "mean_prob": 0.003999484681342516,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 377,
+    "total": 892,
+    "flagged": 9,
+    "mean_prob": 0.009731491868470657,
+    "observed_vacant": 9,
+    "underreported": 4
+  },
+  {
+    "tract": 378,
+    "total": 1478,
+    "flagged": 12,
+    "mean_prob": 0.009436765313226472,
+    "observed_vacant": 16,
+    "underreported": 1
+  },
+  {
+    "tract": 379,
+    "total": 2401,
+    "flagged": 12,
+    "mean_prob": 0.007850628708001916,
+    "observed_vacant": 16,
+    "underreported": 1
+  },
+  {
+    "tract": 380,
+    "total": 844,
+    "flagged": 12,
+    "mean_prob": 0.016927299685237554,
+    "observed_vacant": 18,
+    "underreported": 2
+  },
+  {
+    "tract": 381,
+    "total": 300,
+    "flagged": 2,
+    "mean_prob": 0.011734525886733117,
+    "observed_vacant": 5,
+    "underreported": 1
+  },
+  {
+    "tract": 382,
+    "total": 1072,
+    "flagged": 9,
+    "mean_prob": 0.013999603030955331,
+    "observed_vacant": 15,
+    "underreported": 0
+  },
+  {
+    "tract": 383,
+    "total": 33,
+    "flagged": 0,
+    "mean_prob": 0.013207719759904119,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 384,
+    "total": 860,
+    "flagged": 0,
+    "mean_prob": 0.0005081889562546524,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 385,
+    "total": 33,
+    "flagged": 0,
+    "mean_prob": 0.002681709102092988,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 386,
+    "total": 100,
+    "flagged": 0,
+    "mean_prob": 0.0008773288364055318,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 387,
+    "total": 36,
+    "flagged": 0,
+    "mean_prob": 0.00307897563931075,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 388,
+    "total": 381,
+    "flagged": 4,
+    "mean_prob": 0.009336918967807672,
+    "observed_vacant": 4,
+    "underreported": 1
+  },
+  {
+    "tract": 389,
+    "total": 908,
+    "flagged": 3,
+    "mean_prob": 0.0056779898296751615,
+    "observed_vacant": 6,
+    "underreported": 1
+  },
+  {
+    "tract": 390,
+    "total": 2384,
+    "flagged": 5,
+    "mean_prob": 0.008061317536469256,
+    "observed_vacant": 8,
+    "underreported": 1
+  },
+  {
+    "tract": 391,
+    "total": 599,
+    "flagged": 7,
+    "mean_prob": 0.01460559249197873,
+    "observed_vacant": 8,
+    "underreported": 1
+  },
+  {
+    "tract": 801,
+    "total": 8,
+    "flagged": 0,
+    "mean_prob": 0.0007646495072587999,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 802,
+    "total": 3,
+    "flagged": 0,
+    "mean_prob": 0.0007832870479611665,
+    "observed_vacant": 0,
+    "underreported": 0
+  },
+  {
+    "tract": 809,
+    "total": 5,
+    "flagged": 1,
+    "mean_prob": 0.2012565688404218,
+    "observed_vacant": 1,
+    "underreported": 0
+  },
+  {
+    "tract": 893,
+    "total": 1,
+    "flagged": 0,
+    "mean_prob": 0.0029513223457263,
+    "observed_vacant": 0,
+    "underreported": 0
+  }
+]

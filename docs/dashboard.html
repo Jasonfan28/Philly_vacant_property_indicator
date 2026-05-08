@@ -86,9 +86,10 @@
   .map-mode-badge { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:3px; padding:7px 10px; }
   .map-mode-badge strong { display:block; font-family:var(--font-head); font-size:11px; font-weight:700; color:var(--blue-dark); margin-bottom:1px; }
   .map-mode-badge span { color:var(--muted); font-size:10px; }
-  .toggle-row { display:flex; align-items:center; gap:7px; margin-top:9px; font-size:11px; color:var(--body); cursor:pointer; user-select:none; }
-  .toggle-row input { margin:0; cursor:pointer; }
-  .toggle-row.disabled { opacity:0.5; cursor:not-allowed; }
+  .select-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:9px; font-size:11px; color:var(--body); }
+  .select-row label { font-weight:600; text-transform:uppercase; letter-spacing:0.4px; font-size:10px; color:var(--muted); }
+  .select-row select { font-family:var(--font-body); font-size:11px; padding:4px 6px; border:1px solid var(--border); border-radius:2px; background:var(--white); color:var(--body); cursor:pointer; }
+  .select-row.disabled select { opacity:0.55; cursor:not-allowed; }
 
   /* Zoom hint */
   .zoom-hint { background:var(--blue-pale); border:1px solid var(--blue-light); border-left:3px solid var(--blue-mid); border-radius:3px; padding:8px 10px; font-size:11px; color:var(--blue-dark); line-height:1.45; }
@@ -266,10 +267,15 @@
         <strong id="map-mode-label">Ward Choropleth</strong>
         <span id="map-mode-desc">Zoom to 13+ for parcel layer</span>
       </div>
-      <label class="toggle-row">
-        <input type="checkbox" id="toggle-choro" checked>
-        <span>Show ward choropleth</span>
-      </label>
+      <div class="select-row">
+        <label for="choro-level">Choropleth</label>
+        <select id="choro-level">
+          <option value="ward" selected>Ward</option>
+          <option value="tract">Census tract</option>
+          <option value="zip">ZIP code</option>
+          <option value="none">None</option>
+        </select>
+      </div>
     </div>
 
     <!-- Ward Filter -->
@@ -514,8 +520,7 @@ const LEGENDS = {
       { sw: '#96c9ff', label: 'Low Risk',       sub: 'Ensemble prob 20–40%' },
       { sw: '#daedfe', label: 'Very Low Risk',  sub: 'Ensemble prob < 20%', border: '#96c9ff' }
     ],
-    choroTitle: 'Ward Choropleth — mean predicted prob',
-    choroLow: 'Low', choroHigh: 'High'
+    choroMetric: 'mean predicted prob'
   },
   observed: {
     title: 'Predicted vs Observed',
@@ -525,8 +530,7 @@ const LEGENDS = {
       { sw: '#2176d2', label: 'Model Missed',      sub: 'City signal · no model flag' },
       { sw: '#cccccc', label: 'Agreed Not Vacant', sub: 'Faded — both negative' }
     ],
-    choroTitle: 'Ward Choropleth — observed vacancy rate',
-    choroLow: 'Low', choroHigh: 'High'
+    choroMetric: 'observed vacancy rate'
   },
   underreported: {
     title: 'Underreported Vacancy',
@@ -536,8 +540,7 @@ const LEGENDS = {
       { sw: '#f3c613', label: 'Medium Risk',    sub: 'Ensemble prob 40–60%' }
     ],
     note: 'Showing only flagged parcels with no city vacancy signal (ovs = 0).',
-    choroTitle: 'Ward Choropleth — underreported rate',
-    choroLow: 'Low', choroHigh: 'High'
+    choroMetric: 'underreported rate'
   },
   heatmap: {
     title: 'Flagged Density',
@@ -548,8 +551,7 @@ const LEGENDS = {
       { sw: '#96c9ff', label: 'Cold', sub: 'Sparse / isolated' }
     ],
     note: 'Heatmap of all ~4.5K flagged parcels. Weighted by ensemble probability.',
-    choroTitle: 'Ward Choropleth — hidden in this view',
-    choroLow: '—', choroHigh: '—'
+    choroMetric: null
   }
 };
 
@@ -576,9 +578,13 @@ function renderLegend(view) {
     n.textContent = cfg.note;
     body.appendChild(n);
   }
-  document.getElementById('choro-title').textContent = cfg.choroTitle;
-  document.getElementById('choro-low').textContent  = cfg.choroLow;
-  document.getElementById('choro-high').textContent = cfg.choroHigh;
+  // Choropleth subtitle reflects current aggregation level + view metric.
+  const choroOff = view === 'heatmap' || choroLevel === 'none' || !cfg.choroMetric;
+  const levelLabel = (AREA_CONFIG[choroLevel] && AREA_CONFIG[choroLevel].label) || '';
+  document.getElementById('choro-title').textContent =
+    choroOff ? 'Choropleth — off' : `${levelLabel} Choropleth — ${cfg.choroMetric}`;
+  document.getElementById('choro-low').textContent  = choroOff ? '—' : 'Low';
+  document.getElementById('choro-high').textContent = choroOff ? '—' : 'High';
 }
 
 // ── Bounds helpers ────────────────────────────────────────────
@@ -635,30 +641,79 @@ function getFlaggedData() {
   return flaggedDataPromise;
 }
 
-// ── Ward choropleth (called once map is ready) ────────────────
-async function loadWardChoro() {
+// ── Choropleth aggregation levels ─────────────────────────────
+const AREA_CONFIG = {
+  ward: {
+    label: 'Ward',
+    boundaryUrl: 'ward_boundaries.geojson',
+    statsUrl:    'ward_stats.json',
+    statsKey:    'ward',
+    boundaryKey: p => parseInt(p.ward_num) || null
+  },
+  tract: {
+    label: 'Tract',
+    boundaryUrl: 'tract_boundaries.geojson',
+    statsUrl:    'tract_stats.json',
+    statsKey:    'tract',
+    boundaryKey: p => {
+      const m = String(p.NAME10 || '').match(/^\d+/);
+      return m ? parseInt(m[0]) : null;
+    }
+  },
+  zip: {
+    label: 'ZIP',
+    boundaryUrl: 'zip_boundaries.geojson',
+    statsUrl:    'zip_stats.json',
+    statsKey:    'zip',
+    boundaryKey: p => parseInt(p.code) || null
+  }
+};
+const areaPromises = {};
+function getAreaData(level) {
+  const cfg = AREA_CONFIG[level];
+  if (!cfg) return Promise.resolve(null);
+  if (areaPromises[level]) return areaPromises[level];
+  // For ward, reuse the boundary fetch already wired for the ward filter.
+  const boundariesP = level === 'ward' ? getWardGeo() : fetch(cfg.boundaryUrl).then(r => r.json());
+  const statsP      = level === 'ward' ? getWardStats() : fetch(cfg.statsUrl).then(r => r.json());
+  areaPromises[level] = Promise.all([boundariesP, statsP]).then(([boundaries, stats]) => {
+    const statsBy = {};
+    stats.forEach(s => { statsBy[s[cfg.statsKey]] = s; });
+    return { boundaries, statsBy, cfg };
+  });
+  return areaPromises[level];
+}
+
+async function loadAreaChoro() {
+  if (!map || !map.getLayer('area-choro-fill')) return;
+  const isHeat = mapView === 'heatmap';
+  if (choroLevel === 'none' || isHeat) {
+    map.setLayoutProperty('area-choro-fill', 'visibility', 'none');
+    map.setLayoutProperty('area-choro-line', 'visibility', 'none');
+    return;
+  }
   try {
-    const [stats, geoData] = await Promise.all([getWardStats(), getWardGeo()]);
-    const statMap = {};
-    stats.forEach(w => { statMap[String(w.ward)] = w; });
-    const features = geoData.features.map(f => {
-      const wardNum = String(parseInt(f.properties.ward_num) || '');
-      const stat = statMap[wardNum] || { flagged: 0, total: 0 };
+    const data = await getAreaData(choroLevel);
+    if (!data || choroLevel === 'none') return;
+    const features = data.boundaries.features.map(f => {
+      const k = data.cfg.boundaryKey(f.properties);
+      const stat = (k != null && data.statsBy[k]) || { total: 0, flagged: 0, mean_prob: 0, observed_vacant: 0, underreported: 0 };
       return {
         ...f,
         properties: {
           ...f.properties,
-          ward: wardNum,
-          flagged: stat.flagged,
-          total: stat.total,
-          color: choroColor(stat, mapView)
+          area_id: k,
+          area_label: data.cfg.label,
+          flagged: stat.flagged || 0,
+          total:   stat.total   || 0,
+          color:   choroColor(stat, mapView)
         }
       };
     });
-    if (map && map.getSource('ward-choro')) {
-      map.getSource('ward-choro').setData({ type: 'FeatureCollection', features });
-    }
-  } catch(e) { console.warn('Ward choro failed:', e); }
+    map.getSource('area-choro').setData({ type: 'FeatureCollection', features });
+    map.setLayoutProperty('area-choro-fill', 'visibility', 'visible');
+    map.setLayoutProperty('area-choro-line', 'visibility', 'visible');
+  } catch(e) { console.warn('Area choro failed:', e); }
 }
 
 // ── Summary ───────────────────────────────────────────────────
@@ -862,23 +917,24 @@ async function ensureHeatmapData() {
   heatmapLoaded = true;
 }
 
-// ── Choropleth visibility toggle ──────────────────────────────
-let showChoro = true;
-function applyChoroVisibility() {
+// ── Choropleth level selector ─────────────────────────────────
+let choroLevel = 'ward'; // 'none' | 'ward' | 'tract' | 'zip'
+
+function applyChoroState() {
   if (!map) return;
-  const visible = showChoro && mapView !== 'heatmap';
-  ['ward-choro-fill', 'ward-choro-line'].forEach(id => {
-    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
-  });
-  // Disable the user toggle in heatmap mode (it's force-hidden) for clarity.
-  const row = document.querySelector('.toggle-row');
-  if (row) row.classList.toggle('disabled', mapView === 'heatmap');
-  const cb = document.getElementById('toggle-choro');
-  if (cb) cb.disabled = mapView === 'heatmap';
+  // In heatmap mode the choropleth is always hidden; the select is disabled
+  // for clarity but the chosen level is preserved for when you switch back.
+  const isHeat = mapView === 'heatmap';
+  const row = document.querySelector('.select-row');
+  if (row) row.classList.toggle('disabled', isHeat);
+  const sel = document.getElementById('choro-level');
+  if (sel) sel.disabled = isHeat;
+  loadAreaChoro();
+  renderLegend(mapView);
 }
-document.getElementById('toggle-choro').addEventListener('change', e => {
-  showChoro = e.target.checked;
-  applyChoroVisibility();
+document.getElementById('choro-level').addEventListener('change', e => {
+  choroLevel = e.target.value;
+  applyChoroState();
 });
 
 // ── View switching ────────────────────────────────────────────
@@ -906,8 +962,7 @@ function applyMapView(view) {
       ensureHeatmapData();
     }
   }
-  loadWardChoro();
-  applyChoroVisibility();
+  applyChoroState();
   updateMapModeBadge();
 }
 
@@ -1047,19 +1102,19 @@ p.getHeader().then(() => {
   map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
 
   map.on('load', () => {
-    map.addSource('ward-choro', {
+    map.addSource('area-choro', {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] }
     });
     map.addLayer({
-      id: 'ward-choro-fill', type: 'fill', source: 'ward-choro',
+      id: 'area-choro-fill', type: 'fill', source: 'area-choro',
       paint: {
         'fill-color': ['get', 'color'],
         'fill-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 14, 0]
       }
     });
     map.addLayer({
-      id: 'ward-choro-line', type: 'line', source: 'ward-choro',
+      id: 'area-choro-line', type: 'line', source: 'area-choro',
       paint: {
         'line-color': '#ffffff', 'line-width': 0.8,
         'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.7, 14, 0]
@@ -1105,7 +1160,7 @@ p.getHeader().then(() => {
 
     map.addLayer({ id: 'carto-labels', type: 'raster', source: 'carto_labels' });
 
-    loadWardChoro();
+    applyChoroState();
     updateMapModeBadge();
     map.on('zoom', updateMapModeBadge);
 
