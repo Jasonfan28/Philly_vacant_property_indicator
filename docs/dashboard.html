@@ -86,6 +86,9 @@
   .map-mode-badge { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:3px; padding:7px 10px; }
   .map-mode-badge strong { display:block; font-family:var(--font-head); font-size:11px; font-weight:700; color:var(--blue-dark); margin-bottom:1px; }
   .map-mode-badge span { color:var(--muted); font-size:10px; }
+  .toggle-row { display:flex; align-items:center; gap:7px; margin-top:9px; font-size:11px; color:var(--body); cursor:pointer; user-select:none; }
+  .toggle-row input { margin:0; cursor:pointer; }
+  .toggle-row.disabled { opacity:0.5; cursor:not-allowed; }
 
   /* Zoom hint */
   .zoom-hint { background:var(--blue-pale); border:1px solid var(--blue-light); border-left:3px solid var(--blue-mid); border-radius:3px; padding:8px 10px; font-size:11px; color:var(--blue-dark); line-height:1.45; }
@@ -263,6 +266,10 @@
         <strong id="map-mode-label">Ward Choropleth</strong>
         <span id="map-mode-desc">Zoom to 13+ for parcel layer</span>
       </div>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-choro" checked>
+        <span>Show ward choropleth</span>
+      </label>
     </div>
 
     <!-- Ward Filter -->
@@ -308,6 +315,7 @@
       <button class="view-tab active" data-view="risk">Predicted Risk</button>
       <button class="view-tab" data-view="observed">Predicted vs Observed</button>
       <button class="view-tab" data-view="underreported">Underreported Vacancy</button>
+      <button class="view-tab" data-view="heatmap">Flagged Density</button>
     </div>
 
     <div id="search-box">
@@ -530,6 +538,18 @@ const LEGENDS = {
     note: 'Showing only flagged parcels with no city vacancy signal (ovs = 0).',
     choroTitle: 'Ward Choropleth — underreported rate',
     choroLow: 'Low', choroHigh: 'High'
+  },
+  heatmap: {
+    title: 'Flagged Density',
+    items: [
+      { sw: '#7f0000', label: 'Hot',  sub: 'Heavy flagged-parcel concentration' },
+      { sw: '#cc3000', label: 'Warm', sub: 'Moderate cluster' },
+      { sw: '#f3c613', label: 'Cool', sub: 'Light cluster' },
+      { sw: '#96c9ff', label: 'Cold', sub: 'Sparse / isolated' }
+    ],
+    note: 'Heatmap of all ~4.5K flagged parcels. Weighted by ensemble probability.',
+    choroTitle: 'Ward Choropleth — hidden in this view',
+    choroLow: '—', choroHigh: '—'
   }
 };
 
@@ -811,6 +831,56 @@ function updateFilter() {
   map.setFilter('parcel-line', mapFilter);
 }
 
+// ── Heatmap helpers (lazy: only build when the view is first opened) ──
+let heatmapLoaded = false;
+function ringCentroid(ring) {
+  let sx = 0, sy = 0, n = ring.length;
+  for (let i = 0; i < n; i++) { sx += ring[i][0]; sy += ring[i][1]; }
+  return [sx / n, sy / n];
+}
+function featureCentroid(geom) {
+  if (!geom) return null;
+  if (geom.type === 'Polygon')      return ringCentroid(geom.coordinates[0]);
+  if (geom.type === 'MultiPolygon') return ringCentroid(geom.coordinates[0][0]);
+  if (geom.type === 'Point')        return geom.coordinates;
+  return null;
+}
+async function ensureHeatmapData() {
+  if (heatmapLoaded || !map || !map.getSource('flagged-points')) return;
+  const fc = await getFlaggedData();
+  const points = { type: 'FeatureCollection', features: [] };
+  fc.features.forEach(f => {
+    const c = featureCentroid(f.geometry);
+    if (!c) return;
+    points.features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: c },
+      properties: { weight: f.properties.ensemble_prob || 0.5 }
+    });
+  });
+  map.getSource('flagged-points').setData(points);
+  heatmapLoaded = true;
+}
+
+// ── Choropleth visibility toggle ──────────────────────────────
+let showChoro = true;
+function applyChoroVisibility() {
+  if (!map) return;
+  const visible = showChoro && mapView !== 'heatmap';
+  ['ward-choro-fill', 'ward-choro-line'].forEach(id => {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  });
+  // Disable the user toggle in heatmap mode (it's force-hidden) for clarity.
+  const row = document.querySelector('.toggle-row');
+  if (row) row.classList.toggle('disabled', mapView === 'heatmap');
+  const cb = document.getElementById('toggle-choro');
+  if (cb) cb.disabled = mapView === 'heatmap';
+}
+document.getElementById('toggle-choro').addEventListener('change', e => {
+  showChoro = e.target.checked;
+  applyChoroVisibility();
+});
+
 // ── View switching ────────────────────────────────────────────
 function applyMapView(view) {
   if (!LEGENDS[view]) view = 'risk';
@@ -820,14 +890,24 @@ function applyMapView(view) {
   renderLegend(view);
 
   if (map && map.getLayer('parcel-fill')) {
-    const paint = getParcelPaint(view);
-    map.setPaintProperty('parcel-fill', 'fill-color', paint.color);
-    map.setPaintProperty('parcel-fill', 'fill-opacity',
-      ['interpolate', ['linear'], ['zoom'], 12, 0, 13, paint.opacity]);
-    map.setPaintProperty('parcel-line', 'line-color', paint.color);
-    updateFilter();
+    const isHeat = view === 'heatmap';
+    map.setLayoutProperty('parcel-fill', 'visibility', isHeat ? 'none' : 'visible');
+    map.setLayoutProperty('parcel-line', 'visibility', isHeat ? 'none' : 'visible');
+    map.setLayoutProperty('flagged-heat','visibility', isHeat ? 'visible' : 'none');
+
+    if (!isHeat) {
+      const paint = getParcelPaint(view);
+      map.setPaintProperty('parcel-fill', 'fill-color', paint.color);
+      map.setPaintProperty('parcel-fill', 'fill-opacity',
+        ['interpolate', ['linear'], ['zoom'], 12, 0, 13, paint.opacity]);
+      map.setPaintProperty('parcel-line', 'line-color', paint.color);
+      updateFilter();
+    } else {
+      ensureHeatmapData();
+    }
   }
   loadWardChoro();
+  applyChoroVisibility();
   updateMapModeBadge();
 }
 
@@ -900,7 +980,8 @@ document.addEventListener('click', e => {
 const VIEW_LABELS = {
   risk:          { parcel: 'Parcel Risk Layer',     ward: 'Ward Mean Risk' },
   observed:      { parcel: 'Predicted vs Observed', ward: 'Ward Observed Vacancy' },
-  underreported: { parcel: 'Underreported Parcels', ward: 'Ward Underreported Rate' }
+  underreported: { parcel: 'Underreported Parcels', ward: 'Ward Underreported Rate' },
+  heatmap:       { parcel: 'Flagged-Parcel Density', ward: 'Flagged-Parcel Density' }
 };
 function updateMapModeBadge() {
   if (!map) return;
@@ -999,6 +1080,29 @@ p.getHeader().then(() => {
       minzoom: 13,
       paint: { 'line-color': probColor, 'line-width': 0.5, 'line-opacity': 0.5 }
     });
+
+    // Heatmap source + layer (data attached lazily on first switch into the heatmap view).
+    map.addSource('flagged-points', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'flagged-heat', type: 'heatmap', source: 'flagged-points',
+      layout: { visibility: 'none' },
+      paint: {
+        'heatmap-weight':    ['interpolate', ['linear'], ['get', 'weight'], 0, 0, 1, 1],
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 10, 1, 15, 3.5],
+        'heatmap-color': [
+          'interpolate', ['linear'], ['heatmap-density'],
+          0,   'rgba(0,0,0,0)',
+          0.15,'rgba(150,201,255,0.55)',
+          0.35,'#f3c613',
+          0.6, '#cc3000',
+          0.85,'#7f0000',
+          1,   '#330000'
+        ],
+        'heatmap-radius':  ['interpolate', ['linear'], ['zoom'], 10, 8, 13, 18, 16, 36],
+        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.85, 16, 0.55]
+      }
+    });
+
     map.addLayer({ id: 'carto-labels', type: 'raster', source: 'carto_labels' });
 
     loadWardChoro();
