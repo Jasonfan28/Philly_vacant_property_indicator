@@ -38,13 +38,29 @@ Triangulating across three independent administrative systems is more reliable t
 
 A consequence of the source breakdown shapes interpretation. Across the OVS-equal-one population, Clean & Seal dominates: 88.4 percent of vacant parcels are flagged through the C&S source, 6.1 percent overlap across sources, 3.6 percent appear only through open vacancy violations, and 1.9 percent only through active vacant licenses. The model will largely learn to predict which residential properties the city has already physically boarded up, plus catch earlier-stage signals for properties that have not yet reached that point. Across the 436,297-parcel residential universe (OPA categories 1, 2, 3, and 14), the observed vacancy rate sits at around 1.1 percent.
 
-![OVS source combinations across the vacant parcel population](docs/graphs/ovs_combination_plot.png)
+![OVS class balance](docs/graphs/ovs_class_balance.png)
+
+![OVS source combinations](docs/graphs/ovs_combination_plot.png)
+
+![OVS source overlap on residential parcels](docs/code/03_1_Ovs_files/figure-html/ovs-overlap-plot-1.png)
+
+Validating the OVS label against independent OPA fields confirms it picks up real physical signals, not just administrative artifacts. OVS-equal-one parcels skew heavily toward exterior condition ratings of 5, 6, and 7 (the worst on the assessor's 1-to-7 scale). They tend to be older, with median year-built earlier than occupied parcels. Their median market value sits around $145K against $222K for occupied. Their distribution by OPA category leans toward the categories where vacancy is operationally meaningful.
+
+![Exterior condition by OVS](docs/code/outputs/exteriorcondition.png)
+
+![Year built by OVS](docs/code/outputs/year_built.png)
+
+![Market value by OVS](docs/code/outputs/market_ovs.png)
+
+![OPA category by OVS](docs/code/outputs/opa_cat.png)
 
 Three case-study parcels tested the label early in the project. A severe-vacancy case with C&S records, open violations, and lapsed licenses confirmed the three-source composite identifies clear vacants. A commercial false-positive (a parking garage flagged by code PM15-901.1) led to the parking and commercial filter that lives in [`03_3_Features.Rmd`](code/r_code/03_3_Features.Rmd), since that code applies to vacant property maintenance regardless of residential occupancy. A vacant-land false-negative confirmed that genuinely vacant land is largely invisible to the three-source definition, which motivated treating land separately rather than forcing it through the building model.
 
 Vacancy rates also vary widely in space. Per-ZIP rates range from around 0.3 percent in newer or wealthier areas to around 17 percent in areas with concentrated disinvestment. The clustering is not random, which directly motivated the spatial cross-validation work later in the pipeline.
 
-![Vacant parcels mapped citywide](docs/code/outputs/vacant_parcels_map.png)
+![ZIP-level OVS rates](docs/code/outputs/zip_summary.png)
+
+![Vacant parcels map](docs/code/outputs/vacant_parcels_map.png)
 
 ---
 
@@ -56,17 +72,27 @@ The full feature matrix is engineered in [`03_3_Features.Rmd`](code/r_code/03_3_
 
 We built every feature in four windows: the last six months (acute current activity), the last two years (recent trend), the last three years (mid-term life history), and the last five years (long-term trajectory). A property with five violations in the last six months is operationally different from one with five spread over ten years, even though a flat count would treat them the same. Trend and acceleration features extend the same idea, capturing whether a property is getting worse, improving, or holding steady.
 
-![Violation history across four time windows, OVS=1 versus OVS=0](docs/graphs/violations_faceted_by_ovs.png)
+![Violation history faceted by OVS](docs/graphs/violations_faceted_by_ovs.png)
+
+Exterior condition deserves a closer look because of how cleanly it separates. Vacancy rates rise monotonically with the assessor's 1-to-7 condition rating, with rating 7 (the worst) showing dramatically higher vacancy rates than rating 1.
+
+![Vacancy rate by exterior condition](docs/graphs/exterior_condition_vacancy_rate.png)
 
 The 34 features in the production model fall into six groups. Twelve violation features cover counts (total, four time windows, distinct, repeat), the resolution rate, life-history trends and acceleration, severity flags (maintenance, structural, fire safety), and recency. The eleven OVS-defining violation codes are explicitly excluded from violation features to prevent direct leakage. The model learns instead from the broader 54-code keyword set of vacancy-related violations, the 43 of which are not part of the label itself.
 
 Nine RTT features capture deed and sheriff-sale history: total and windowed transfers, deed count, sheriff-sale flags, log price change between the two most recent deeds, and recency. RTT adds the full ownership history beyond the single most-recent OPA `sale_date`. Frequent re-sales can indicate distressed flipping, a sheriff sale is a direct foreclosure signal, and a log price decline between consecutive deeds suggests the market is pricing in deterioration risk.
 
-Five OPA features cover exterior condition (a 1-7 assessor scale), building age, log livable area, log sale price, and days since last sale. Log market value and value-per-square-foot are deliberately excluded. Assessed values in Philadelphia carry well-documented racial and geographic bias, and including them would import that bias into the predicted score. Three Clean & Seal features capture history rather than current active status, since current active status is itself the OVS C&S rule and using it would be direct leakage. The C&S features the model does see are total events, days since last event, and the span between first and most recent (a chronic-problem measure). One license feature, `had_rental_then_vacant`, captures the lifecycle transition from rental license to later vacancy license, an unusually informative qualitative signal. Four spatial-lag features summarise neighborhood context.
+Five OPA features cover exterior condition (the 1-7 assessor scale), building age, log livable area, log sale price, and days since last sale. Log market value and value-per-square-foot are deliberately excluded. Assessed values in Philadelphia carry well-documented racial and geographic bias, and including them would import that bias into the predicted score. Three Clean & Seal features capture history rather than current active status, since current active status is itself the OVS C&S rule and using it would be direct leakage. The C&S features the model does see are total events, days since last event, and the span between first and most recent (a chronic-problem measure). One license feature, `had_rental_then_vacant`, captures the lifecycle transition from rental license to later vacancy license, an unusually informative qualitative signal. Four spatial-lag features summarise neighborhood context.
 
 Missing-value handling is conservative. Integer counts and rate fields are filled to zero (a missing parcel means no events occurred). Day-since fields are filled with a large sentinel value meaning no activity on record before the data starts. RTT price fields are left genuinely missing when a parcel has fewer than two arms-length sales, and median imputation handles them inside the modeling recipe. The final feature matrix covers around 522,000 parcels with around 80 columns; the production model uses the 34-feature subset described above.
 
-![Top 20 univariate correlations against OVS](docs/graphs/univariate_correlation.png)
+![Top 20 univariate correlations](docs/graphs/univariate_correlation.png)
+
+Before adding anything beyond OPA, we fit a baseline logistic regression on four OPA-only features (exterior condition, log market value, building age, log livable area) on around 276,000 parcels with non-missing values. Baseline AUC is 0.798. This is the floor the engineered feature set has to beat, and by enough to justify the engineering effort.
+
+![Baseline ROC curve](docs/code/03_2_Analysis_files/figure-html/baseline-roc-1.png)
+
+![Baseline predicted probability distribution](docs/graphs/baseline_prob_distribution.png)
 
 ---
 
@@ -76,7 +102,11 @@ Missing-value handling is conservative. Integer counts and rate fields are fille
 
 The framing question is straightforward. At a 1.1 percent vacancy prevalence, which family of models ranks parcels best? We tested four base learners through `tidymodels`: logistic regression with L2 regularization via `glmnet`, a 500-tree random forest fit through `ranger`, XGBoost, and LightGBM via `bonsai`. Each was wrapped in the same recipe: median imputation for the few NA-bearing fields, a zero-variance filter, and ROSE synthetic minority oversampling applied only inside the training fold of each cross-validation split. Wrapping ROSE inside the recipe ensures the resampling step never leaks into the test fold. At 1.1 percent prevalence, models drift toward the majority class without correction. ROSE rebalances the training data, and class-weight tuning provides a complementary lever inside each model.
 
+![ROSE versus no subsampling](docs/graphs/python/rose_subsampling_comparison.png)
+
 The data was split 70/30 stratified random rather than temporally. We evaluated and discarded a temporal split early. Activity recency is itself a vacancy proxy via fields like `days_since_last_viol` and `cs_active_2yr`. A temporal split therefore induces severe distributional shift, with train OVS-equal-one rates around 0.2 percent against test rates around 6.9 percent, and AUC estimates become unreliable. Stratified random keeps both train (around 364K rows) and test (around 156K rows) at production prevalence. Temporal generalization is tested separately later in the pipeline.
+
+![Train versus test density check for overfitting](docs/graphs/python/overfit_check_density.png)
 
 Once leakage-prone features were removed, the boosters had nothing left to exploit. Logistic regression scored 0.932 ROC-AUC on the test set. Random forest, 0.920. LightGBM dropped to 0.831, XGBoost to 0.810. Logistic regression and random forest captured the signal cleanly. The boosters over-committed to a few features and lost the long tail. We took logistic regression and random forest to production and kept the boosters as diagnostic comparators.
 
@@ -84,11 +114,19 @@ Once leakage-prone features were removed, the boosters had nothing left to explo
 
 The production score, the Vacancy Risk Score, is a 50/50 average of the calibrated logistic and random forest probabilities. Tree-based models rank well but report probabilities that don't match reality. A raw RF score of 0.7 might correspond to an empirical vacancy rate of 30 percent, not 70. Isotonic regression on the test-set predictions of the raw ensemble preserves the ranking and fixes the scale. Vacancy is rare enough that even the very top one percent of parcels is only around 59 percent truly vacant, so the highest calibrated probability is around 0.6, not 1.0. Calibrated probabilities should never be compared to a fixed threshold like 0.5 because almost nothing exceeds it. The right way to use the score for inspection triage is `ensemble_flag` (top one percent by raw rank) or `qtile_tier` (a five-bucket rank).
 
-![Calibration curve for the calibrated ensemble](docs/graphs/python/calibration_curve.png)
+![Calibration curve for the ensemble](docs/graphs/python/calibration_curve.png)
+
+![Calibrated versus raw probability distributions](docs/graphs/python/cal_vs_raw_distribution.png)
 
 The headline test-set numbers are: ROC-AUC 0.940, PR-AUC 0.546, Brier 0.0068. Mean ensemble probability across the full population is around 1.28 percent, close to the observed prevalence of 1.1 percent. The PR-AUC of 0.546 at 1.1 percent prevalence is roughly fifty times the baseline of 0.011, and is the metric that matters most under this class imbalance. Variable importance from the random forest places C&S history, vacancy license history, violation trajectories, and recency signals at the top, with `n_violations_total`, `days_since_last_viol`, `n_cs_total`, `n_violations_recent`, and `has_fire_safety_code` the five strongest features.
 
-![Random forest variable importance, top 20](docs/graphs/python/rf_variable_importance.png)
+![Random Forest variable importance, top 20](docs/graphs/python/rf_variable_importance.png)
+
+Threshold sensitivity (precision and recall as functions of the decision cutoff) and the resulting five-tier probability distribution close out the modeling diagnostics. They establish how the score behaves across operating points before any policy is layered on top.
+
+![Threshold sensitivity precision and recall](docs/graphs/python/threshold_sensitivity.png)
+
+![Five-tier probability distribution](docs/graphs/python/tier_distribution.png)
 
 ---
 
@@ -100,9 +138,11 @@ The headline test AUC alone is not enough to argue the model generalizes. Severa
 
 The first is a 10-fold spatial cross-validation grouped by ZIP code, where all parcels in a given ZIP are kept together (either all in training or all in test, never split across both). Mean AUC across the ten folds is 0.888 plus or minus 0.006. This is the lower-bound, conservative AUC for the random forest component, and the right number to defend against the strongest version of the spatial leakage critique.
 
-![Per-fold spatial CV AUC and J-Index](docs/graphs/python/spatial_cv_performance.png)
+![Spatial CV per-fold AUC and J-Index](docs/graphs/python/spatial_cv_performance.png)
 
 The second is leave-one-ZIP-out cross-validation, holding out one entire ZIP at a time. To bound compute, we sampled 15 of Philadelphia's roughly 45 residential ZIPs and fit a fresh RF for each. Mean LOGO AUC is 0.885, very close to the 10-fold result. Median per-ZIP AUC is 0.95 and above; no sampled ZIP fell below the 0.70 threshold that would have flagged it for manual review. LOGO matters for deployment. If the city ever applies the model to newly annexed areas, or future data includes ZIPs not well represented in the training window, the LOGO result predicts how well the model performs in those situations.
+
+![LOGO AUC by held-out ZIP](docs/graphs/python/logo_cv_by_zip.png)
 
 The third is block cross-validation by census tract, with five folds. Each fold holds out approximately 20 percent of Philadelphia's tracts entirely. Block-CV mean AUC is 0.968 plus or minus 0.008. This sits between the random-split test AUC of 0.940 and the ZIP-blocked AUC of 0.888, which is internally consistent: ZIP groups are larger than tracts, so ZIP blocking is a more aggressive test of generalization. Tract blocking is the right granularity for the operational story, because the city does inspect and intervene at tract level all the time. The 0.97 figure is the right number to defend as the honest, leakage-controlled AUC for the random forest component.
 
@@ -118,6 +158,8 @@ The random forest also provides free uncertainty quantification through per-tree
 
 Four sanity checks confirm the model learns from the right signals. Top features by Gini importance match the domain-sensible expected list. The calibration curve sits close to the 45-degree diagonal, slightly under-predicting by around 0.03 percentage points on average. Parcels carrying `cs_truly_active` score around 2.5 times higher than the no-signal group, and parcels with a vacancy license score around 4.5 times higher. Partial dependence on violation count rises monotonically from the first to the 99th percentile.
 
+![04b feature importance reproduction](docs/graphs/python/rf_vip_04b.png)
+
 ---
 
 ## Subgroup performance and equity
@@ -126,11 +168,13 @@ Four sanity checks confirm the model learns from the right signals. Top features
 
 Citywide AUC can mask substantial heterogeneity. A model that ranks well on average but poorly in specific neighborhoods or building types is not operationally usable. We split the citywide AUC along three axes (ZIP, building category, ward) and ran an equity audit by census-tract median household income.
 
-Per-ZIP AUC, computed over the 41 ZIPs that meet the minimum-N filter (at least 50 parcels and at least 5 observed vacants), has a median of 0.973 and a fifth percentile of 0.949. No ZIP falls below 0.70. The model's overall ROC ranking quality survives the ZIP-by-ZIP cut, which means operational decisions can apply the score citywide rather than carving out low-AUC pockets.
+Per-ZIP AUC, computed over the 41 ZIPs that meet the minimum-N filter (at least 50 parcels and at least 5 observed vacants), has a median of 0.973 and a fifth percentile of 0.949. No ZIP falls below 0.70. The model's overall ROC ranking quality survives the ZIP-by-ZIP cut, which means operational decisions can apply the score citywide rather than carving out low-AUC pockets. The flag-rate-versus-observed-rate scatter at the ZIP level is broadly proportional, with no ZIP showing a flag rate dramatically out of line with its observed vacancy rate.
 
 ![AUC by ZIP code](docs/graphs/python/auc_by_zip.png)
 
-Per-category AUC across OPA building types is similarly uniform: single family at 0.980 across about 461,000 parcels, multi-family/duplex/triplex at 0.978 across 41,000 parcels, mixed use at 0.945 across 14,000 parcels, and apartments greater than four units at 0.942 across 3,600 parcels. Mean predicted probability tracks observed rate by category. Mixed use sits at 2.73 percent observed (the highest), multi-family at 1.68 percent, apartments greater than four units at 1.23 percent, and single family at 1.20 percent. The shared feature set captures the cross-type vacancy dynamic well, even though the model was trained on all categories together.
+![Equity flag rate versus observed vacancy by ZIP](docs/graphs/python/equity_zip_scatter.png)
+
+Per-category AUC across OPA building types is similarly uniform: single family at 0.980 across about 461,000 parcels, multi-family/duplex/triplex at 0.978 across 41,000 parcels, mixed use at 0.945 across 14,000 parcels, and apartments greater than four units at 0.942 across 3,600 parcels. Mean predicted probability tracks observed rate by category, which the stakeholder summary section examines in more detail.
 
 The equity audit is the section that should reassure stakeholders most directly. Census tracts are binned into income quintiles using ACS five-year median household income, with Q1 the lowest and Q5 the highest. Per-quintile AUC ranges from 0.968 to 0.978. Mean predicted probability tracks observed rate closely in every quintile: Q1 sits at 2.60 percent observed and 2.93 percent predicted, while Q5 sits at 0.31 percent observed and 0.28 percent predicted. The model identifies vacancy with the same ranking quality whether the parcel sits in a low-income or high-income tract, and is not systematically over-predicting or under-predicting in any income band.
 
@@ -150,13 +194,15 @@ The City of Philadelphia publishes a binary Vacant Property Indicator on OpenDat
 
 At matched flag prevalence, the ensemble outperforms the City VPI on both axes. The City VPI flags around 6,400 residential parcels at 53.3 percent precision and 57.6 percent recall against OVS. Our ensemble at matched capacity flags 6,400 parcels at 54.7 percent precision and 78.3 percent recall. Same workload, twenty more recall points. The continuous-score view is starker. Ensemble AUC against OVS is 0.979. The binary VPI as a thresholded classifier has an AUC of 0.785. Ensemble average precision is 0.754. VPI average precision is 0.312. The model identifies vacancy with substantially better ranking quality than the binary VPI at the same flag volume.
 
-![Ensemble versus City VPI ROC and PR curves](docs/graphs/python/vs_city_vpi_roc_pr.png)
+![Ensemble versus VPI ROC and PR curves](docs/graphs/python/vs_city_vpi_roc_pr.png)
 
 Where the two models disagree, the disagreement is informative. Across the four buckets formed by the two flags: where both models flag a parcel, the observed OVS rate is 83.3 percent across 3,199 parcels. Where only the model flags, 5,300 parcels at 37.4 percent. Where only the City VPI flags, 3,211 parcels at 23.4 percent. Where neither flags, 0.1 percent across 508,486 parcels. The 'only ours' bucket has nearly twice the observed vacancy of the 'only VPI' bucket, which is direct evidence that the model's exclusive flags are higher quality on average than the VPI's. Per-ZIP precision favors the model in around 30 of the 41 ZIPs.
 
 ![Four-bucket disagreement summary](docs/graphs/python/vs_city_vpi_buckets.png)
 
-![Per-ZIP precision scatter, ensemble versus VPI](docs/graphs/python/vs_city_vpi_zip_scatter.png)
+![Per-ZIP precision scatter, ensemble vs VPI](docs/graphs/python/vs_city_vpi_zip_scatter.png)
+
+![Disagreement map snapshot](docs/graphs/python/vs_city_vpi_map.png)
 
 The disagreement also produces a useful operational artifact. We isolated the top 339 parcels with the highest ensemble probability that have OVS-equal-zero. Of those, 27 also appear in the City VPI, which is independent corroboration that those parcels are genuinely vacant despite OVS missing them. The remaining 312 are candidate false positives or genuinely undetected vacants. They were exported with addresses for inspector review, alongside an interactive map for the city's use. This is the model surfacing parcels that no single administrative source had captured, which is part of the original framing for why the work was needed.
 
@@ -174,6 +220,8 @@ At the one percent ward capacity, model-only flagging produces 5,232 parcels at 
 
 ![Operational precision at one percent ward capacity](docs/graphs/python/operational_precision_at_capacity.png)
 
+![Capacity threshold curve](docs/graphs/python/capacity_threshold_curve.png)
+
 A second methodological refinement addresses an optimism in the original calibrator. The isotonic mapping in [`04a_tidymodeling.Rmd`](code/r_code/04a_tidymodeling.Rmd) was fit on the full test set, which is a deliberate shortcut for an initial release but allows a small amount of optimism into the calibrated probabilities. [`04d_recalibration.Rmd`](code/r_code/04d_recalibration.Rmd) refits the calibrator on a held-out half of the test split and evaluates on the other half (which neither the model nor either calibrator has seen). On the evaluation half, the recalibrated probabilities show ROC-AUC 0.938 (versus 0.940 original), Brier 0.0067 unchanged, and a mean-predicted-to-observed ratio of 1.04x (versus 1.02x original). The reliability curves both follow the diagonal, but the recalibrated version stays closer across all probability bins. The substantive difference is small enough that consumers of `ensemble_prob` do not need to migrate urgently, but production dashboards should use `ensemble_prob_v2`.
 
 ![Reliability curve, original versus recalibrated](docs/graphs/python/recalibration_reliability.png)
@@ -183,6 +231,32 @@ A second methodological refinement addresses an optimism in the original calibra
 ![Top SHAP drivers for flagged parcels](docs/graphs/python/shap_summary_topflags.png)
 
 A useful pattern appears in the local explanations. Some neighborhood-level features push downward at flagged parcels. A high count of vacant parcels in the same ZIP can lower the ensemble probability for a specific parcel, presumably because the model already accounts for the neighborhood baseline elsewhere, and an individual parcel in a high-vacancy ZIP is comparatively less risky than one that looks unusual within its ZIP. The TreeSHAP outputs feed directly into the dashboard's why-this-parcel panel, so a user clicking any flagged address sees the specific features driving its score, not just the score itself.
+
+---
+
+## Stakeholder summaries
+
+**Code:** [`05_output_analysis.Rmd`](code/r_code/05_output_analysis.Rmd)
+
+[`05_output_analysis.Rmd`](code/r_code/05_output_analysis.Rmd) turns the production predictions into rollups stakeholders can scan without touching the model. None of these add new analytical content. They translate the per-parcel outputs into the units the city's operational and policy workflows actually use.
+
+Per-category prediction summaries show the score doing meaningful work within building type. Mean predicted probability tracks observed rate by category. The probability distribution by category is right-skewed in every type, with mixed-use carrying the heaviest right tail. Per-category calibration sits close to the diagonal, so the model is honest within type and not just on average.
+
+![Mean predicted probability by category](docs/graphs/python/mean_prob_by_category.png)
+
+![Probability distribution by category](docs/graphs/python/prob_distribution_by_category.png)
+
+![Category calibration scatter](docs/graphs/python/category_calibration.png)
+
+The five-tier distribution by category is the unit dashboards display. About 99.88 percent of parcels sit in Very Unlikely (probability under 0.2). The Very Likely tier (above 0.8) holds about 0.47 percent of parcels, which is the operational high-risk pool. Tier counts and observed OVS rates per tier are reported within each category, confirming the probability scores discriminate within building type and not just across the population on average.
+
+![Five-tier distribution by category](docs/graphs/python/five_tier_distribution.png)
+
+Per-ZIP rollups are the spatial counterpart. Mean predicted probability is bar-charted by ZIP for direct ranking, and the ZCTA-level choropleth is the citywide-at-a-glance view that gets included in stakeholder briefings.
+
+![Mean predicted probability by ZIP](docs/graphs/python/zip_mean_prob_bar.png)
+
+![ZCTA choropleth of mean P(vacant)](docs/graphs/python/spatial_zip_choropleth.png)
 
 ---
 
