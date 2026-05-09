@@ -651,6 +651,8 @@
 <nav class="toc-section">
   <h2>Contents</h2>
   <ol>
+    <li><a href="#repo-layout">Repository Layout</a></li>
+    <li><a href="#running">Running the Pipeline</a></li>
     <li><a href="#step-1">Data Inventory &amp; Reference</a></li>
     <li><a href="#step-2">New Data Quality Check</a></li>
     <li><a href="#step-3">OVS Exploratory Analysis</a></li>
@@ -668,6 +670,11 @@
     <li><a href="#step-15">Block Cross-Validation by Census Tract</a></li>
     <li><a href="#step-16">Output Analysis &amp; Stakeholder Summaries</a></li>
     <li><a href="#step-17">Vector Tilesets for Web Consumption</a></li>
+    <li><a href="#website-dashboard">Website &amp; Dashboard</a></li>
+    <li><a href="#headline-metrics">Appendix A — Headline Metrics</a></li>
+    <li><a href="#design-decisions">Appendix B — Design Decisions</a></li>
+    <li><a href="#output-catalog">Appendix C — Output Catalog</a></li>
+    <li><a href="#data-sources">Appendix D — Data Sources</a></li>
   </ol>
 </nav>
 
@@ -676,6 +683,7 @@
   <div class="section-label">Overview — Pipeline</div>
   <h2>An Automated, Cache-Aware Modeling Pipeline</h2>
   <p>The pipeline turns administrative data from OPA, L&amp;I, and the Philadelphia Revenue Department into a parcel-level predicted probability of vacancy for every residential property in the city — plus a calibrated 0&ndash;100 risk score, an ensemble flag for the top one percent of parcels, and a five-tier rank bucket for dashboard display.</p>
+  <p>The whole pipeline is R Markdown end to end and lives in <code>code/r_code/</code>. Modeling, validation, calibration, explainability, and tiling all run in R using <code>tidymodels</code>, <code>ranger</code>, <code>xgboost</code>, <code>lightgbm</code> (via <code>bonsai</code>), <code>probably</code> for calibration, and <code>treeshap</code> for local explanations. The <code>data_py/</code> output folder name is historical &mdash; it is just where every step reads from and writes to.</p>
 
   <div class="pipeline">
     <div class="pl-label">Manual once &mdash; establish labels &amp; reference</div>
@@ -685,7 +693,7 @@
     <div class="pl-step">03_1_Ovs <span class="pl-arrow">&rarr;</span> <span class="pl-file">ovs_residential.csv</span></div>
     <div class="pl-step">03_2_Analysis <span class="pl-arrow">&rarr;</span> tier mapping, EDA, baseline model (AUC 0.798)</div>
     <div class="pl-step">03_3_Features <span class="pl-arrow">&rarr;</span> <span class="pl-file">features_residential.csv</span></div>
-    <div class="pl-label">Python modeling &amp; validation in code/python/</div>
+    <div class="pl-label">R Markdown modeling &amp; validation in code/r_code/</div>
     <div class="pl-step">04a_tidymodeling <span class="pl-arrow">&rarr;</span> Logit &middot; RF &middot; XGB &middot; LGB &middot; 50/50 calibrated ensemble</div>
     <div class="pl-step">04b_model_validation <span class="pl-arrow">&rarr;</span> spatial CV by ZIP, LOGO CV, RF tree-variance CIs</div>
     <div class="pl-step">04b_vpi_comparison <span class="pl-arrow">&rarr;</span> per-ZIP, per-building-type, per-ward, equity by income</div>
@@ -694,14 +702,45 @@
     <div class="pl-step">04e_operational_thresholds <span class="pl-arrow">&rarr;</span> per-ward capacity flagging</div>
     <div class="pl-step">04f_local_explanations <span class="pl-arrow">&rarr;</span> TreeSHAP on top-flagged parcels</div>
     <div class="pl-step">04g_temporal_validation <span class="pl-arrow">&rarr;</span> evaluation by violation-recency cohort</div>
-    <div class="pl-step">04h_block_cv_rf <span class="pl-arrow">&rarr;</span> GroupKFold by census tract</div>
+    <div class="pl-step">04h_block_cv_rf <span class="pl-arrow">&rarr;</span> group_vfold_cv by census tract</div>
     <div class="pl-step">05_output_analysis <span class="pl-arrow">&rarr;</span> probability summaries, ZCTA choropleth, capacity lookup</div>
     <div class="pl-step">06_tiling <span class="pl-arrow">&rarr;</span> PMTiles vector tilesets for web consumption</div>
   </div>
 
   <div class="callout callout-blue">
     <div class="callout-label">Caching</div>
-    <p>Each notebook caches expensive computations under <code>data_py/cache/</code> keyed by a SHA-1 of the feature list. Re-runs are fast as long as the feature set has not changed; deleting the cache forces a clean refit.</p>
+    <p>Each Rmd caches expensive computations under <code>data_py/cache/</code> keyed by a SHA-1 of the feature list. Re-runs are fast as long as the feature set has not changed; deleting the cache forces a clean refit.</p>
+  </div>
+</section>
+
+<!-- REPOSITORY LAYOUT -->
+<section id="repo-layout">
+  <div class="section-label">Reference &mdash; Repository Layout</div>
+  <h2>Repository Layout</h2>
+  <p>The repository separates the R Markdown pipeline from the rendered reports and the static web surface. Knit outputs and headline figures live under <code>docs/</code> so the GitHub Pages site picks them up directly.</p>
+  <div class="pipeline">
+    <div class="pl-step">code/r_code/             <span class="pl-arrow">&rarr;</span> Full R Markdown pipeline. Steps 00 through 06.</div>
+    <div class="pl-step">docs/code/outputs/       <span class="pl-arrow">&rarr;</span> Rendered HTML reports plus a handful of standalone PNGs from early-stage EDA.</div>
+    <div class="pl-step">docs/code/03_*_files/    <span class="pl-arrow">&rarr;</span> Auto-generated figure folders from knitting the Rmd files.</div>
+    <div class="pl-step">docs/graphs/             <span class="pl-arrow">&rarr;</span> Headline figures used across documentation.</div>
+    <div class="pl-step">docs/graphs/python/      <span class="pl-arrow">&rarr;</span> Modeling and validation figures. Folder name is historical &mdash; every file is now produced by the R pipeline.</div>
+    <div class="pl-step">docs/                    <span class="pl-arrow">&rarr;</span> Static dashboard, landing page, PMTiles, ward GeoJSON, and the optional local Flask backend (<span class="pl-file">tileserver.py</span> + <span class="pl-file">load_db.py</span>). Served as the GitHub Pages root.</div>
+  </div>
+</section>
+
+<!-- RUNNING THE PIPELINE -->
+<section id="running">
+  <div class="section-label">Reference &mdash; Running the Pipeline</div>
+  <h2>Running the Pipeline</h2>
+  <p>The early steps (00 to 03_3) load raw OpenDataPhilly extracts, validate quality, define the outcome variable, and engineer the feature matrix. They are run once whenever raw inputs change. They produce two flat tables that downstream steps consume:</p>
+  <ul style="margin: 0 0 1.3em 18px;">
+    <li><code>data/ovs_residential.csv</code> &mdash; around 522K residential parcels with the OVS label and source flags.</li>
+    <li><code>data/features_residential.csv</code> &mdash; the same parcels with around 80 engineered features.</li>
+  </ul>
+  <p>Each Rmd reads its inputs from <code>data/</code> or <code>data_py/</code>, writes outputs back to <code>data_py/</code>, and knits a self-contained HTML rendering next to itself. The files have a strict left-to-right dependency. <code>04a</code> fits the four base learners and the calibrated ensemble. <code>04b</code> through <code>04h</code> consume those fitted artefacts for validation. <code>05</code> produces the stakeholder-facing summaries, and <code>06</code> turns the parcel GeoJSON into PMTiles for the website.</p>
+  <div class="callout callout-blue">
+    <div class="callout-label">How to Re-Run</div>
+    <p>To re-run the pipeline end to end, knit the Rmd files in alphabetical order. Each step caches its expensive computations under <code>data_py/cache/</code> keyed by a SHA-1 of the feature list, so re-runs are fast as long as the feature set has not changed. Deleting <code>data_py/cache/</code> forces a clean refit.</p>
   </div>
 </section>
 
@@ -709,7 +748,7 @@
 <section id="step-1">
   <div class="section-label">01 &mdash; Data Inventory</div>
   <h2>Data Inventory &amp; Reference</h2>
-  <p><code>code/00_data_inventory.Rmd</code> is the reference layer for the entire project. It establishes the vocabulary, the data quality picture, and the definition of the outcome variable before any analysis begins.</p>
+  <p><code>code/r_code/00_data_inventory.Rmd</code> is the reference layer for the entire project. It establishes the vocabulary, the data quality picture, and the definition of the outcome variable before any analysis begins.</p>
 
   <h3>1.1 Load and profile all eight raw datasets</h3>
   <p>All source files are loaded from <code>rawdata/</code> with row counts, column names, and a <code>glimpse()</code>. Profiling upfront prevents silent data errors downstream &mdash; knowing a field has 40% missing values, or that date ranges only go back to 2010, shapes every subsequent design decision.</p>
@@ -783,7 +822,7 @@
 <section id="step-2">
   <div class="section-label">02 &mdash; Quality Check</div>
   <h2>New Data Quality Check</h2>
-  <p><code>code/00b_new_data_check.Rmd</code> validates two newer sources before they enter the feature pipeline.</p>
+  <p><code>code/r_code/00b_new_data_check.Rmd</code> validates two newer sources before they enter the feature pipeline.</p>
 
   <h3>2.1 Real Estate Transfer records (RTT_SUMMARY)</h3>
   <p>The RTT dataset is loaded and profiled. Key checks: join key detection (confirmed as <code>opa_account_num</code>), match rate against OPA, date range on <code>display_date</code>, and document type distribution (DEED, DEED SHERIFF, MORTGAGE, AGREEMENT OF SALE).</p>
@@ -798,7 +837,7 @@
 <section id="step-3">
   <div class="section-label">03 &mdash; OVS EDA</div>
   <h2>OVS Exploratory Analysis</h2>
-  <p><code>code/02_ovs_exploration.Rmd</code> profiles the dependent variable across the full parcel universe before applying the residential filter.</p>
+  <p><code>code/r_code/02_ovs_exploration_JF.Rmd</code> profiles the dependent variable across the full parcel universe before applying the residential filter.</p>
 
   <h3>3.1 OVS source overlap</h3>
   <p>A bar chart shows how many OVS = 1 parcels are flagged by only one source versus combinations of two or three. Clean &amp; Seal alone accounts for the bulk of the label, with the other two sources contributing smaller exclusive shares and a long tail of overlap. Parcels flagged by multiple sources carry high label confidence; parcels flagged by only one source may have higher label noise.</p>
@@ -859,7 +898,7 @@
 <section id="step-4">
   <div class="section-label">04 &mdash; Label Construction</div>
   <h2>OVS Construction (Residential Only)</h2>
-  <p><code>code/03_1_Ovs.Rmd</code> is the single source of truth for the model's outcome variable. Every downstream file reads <code>ovs_residential.csv</code> rather than re-constructing OVS independently.</p>
+  <p><code>code/r_code/03_1_Ovs.Rmd</code> is the single source of truth for the model's outcome variable. Every downstream file reads <code>ovs_residential.csv</code> rather than re-constructing OVS independently.</p>
 
   <h3>4.1 Set the temporal anchor</h3>
   <p><code>TRAIN_CUTOFF</code> is fixed at <code>2025-10-01</code> globally. Every feature and every OVS source must use data strictly before this date. This prevents any information from after the cutoff from leaking into the model.</p>
@@ -910,7 +949,7 @@
 <section id="step-5">
   <div class="section-label">05 &mdash; Tiers &amp; Baseline</div>
   <h2>Violation Tier Mapping, EDA &amp; Baseline Model</h2>
-  <p><code>code/03_2_Analysis.Rmd</code> establishes the violation severity scheme and the performance floor any engineered model must beat.</p>
+  <p><code>code/r_code/03_2_Analysis.Rmd</code> establishes the violation severity scheme and the performance floor any engineered model must beat.</p>
 
   <h3>5.1 The VacancyGuide violation tier scheme</h3>
   <p>108 L&amp;I violation codes are manually mapped to three severity tiers based on the VacancyGuide2026 methodology developed by Tim Haynes.</p>
@@ -992,7 +1031,7 @@
 <section id="step-6">
   <div class="section-label">06 &mdash; Feature Engineering</div>
   <h2>Feature Engineering</h2>
-  <p><code>code/03_3_Features.Rmd</code> is the largest and most complex file in the pipeline. It transforms seven raw data sources into a single flat feature matrix. The guiding principle throughout is <strong>no temporal leakage</strong>.</p>
+  <p><code>code/r_code/03_3_Features.Rmd</code> is the largest and most complex file in the pipeline. It transforms seven raw data sources into a single flat feature matrix. The guiding principle throughout is <strong>no temporal leakage</strong>. Every feature must be constructed from data strictly before <code>TRAIN_CUTOFF</code>.</p>
 
   <h3>6.1 Training-cutoff time windows</h3>
   <div class="table-wrap">
@@ -1018,27 +1057,32 @@ ovs_df &lt;- ovs_df %&gt;%
   <p>Permit records are filtered to completed demolition and new-construction permits before <code>TRAIN_CUTOFF</code>. For each parcel the most recent demolition date and most recent new-construction date are recorded.</p>
 
   <h3>6.4 Violation features</h3>
-  <p>The OVS-defining eleven violation codes are explicitly excluded from all violation features via <code>filter(!is_ovs_code)</code> &mdash; using them would create direct leakage.</p>
+  <p>The OVS-defining eleven violation codes are explicitly excluded from all violation features via <code>filter(!is_ovs_code)</code> &mdash; using them would create direct leakage since they are components of the label.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Feature</th><th>Description</th></tr></thead>
       <tbody>
         <tr><td>n_violations_total</td><td>All-time violation count</td></tr>
-        <tr><td>n_violations_recent / 2yr / 3yr / 5yr</td><td>Counts in 6mo, 2yr, 3yr, 5yr windows</td></tr>
-        <tr><td>n_violations_open</td><td>Currently open count <em>(excluded from final model &mdash; OVS proxy)</em></td></tr>
+        <tr><td>n_violations_recent</td><td>Violations in last 6 months</td></tr>
+        <tr><td>n_violations_2yr</td><td>Violations in last 2 years</td></tr>
+        <tr><td>n_violations_3yr</td><td>Violations in last 3 years</td></tr>
+        <tr><td>n_violations_5yr</td><td>Violations in last 5 years</td></tr>
+        <tr><td>n_violations_open</td><td>Count of currently open violations. Excluded from final model as an OVS proxy</td></tr>
         <tr><td>n_distinct_codes</td><td>Number of unique violation codes ever cited</td></tr>
-        <tr><td>viol_trend_3v5</td><td>3yr count minus 3&ndash;5yr count. Positive means worsening</td></tr>
-        <tr><td>viol_accel_2v3</td><td>2yr count minus 2&ndash;3yr count. Positive means accelerating</td></tr>
-        <tr><td>n_repeat_codes</td><td>Codes cited two or more times</td></tr>
-        <tr><td>resolution_rate</td><td>Fraction of violations resolved</td></tr>
-        <tr><td>has_maintenance_code / structural_code / fire_safety_code</td><td>Tier-level "ever had" flags</td></tr>
-        <tr><td>has_open_structural</td><td>Has currently open Level 3 violation</td></tr>
+        <tr><td>viol_trend_3v5</td><td>Count in 3yr window minus count in the 3 to 5yr window. Positive means worsening</td></tr>
+        <tr><td>viol_accel_2v3</td><td>Count in 2yr window minus count in the 2 to 3yr window. Positive means accelerating</td></tr>
+        <tr><td>n_repeat_codes</td><td>Count of codes cited two or more times. Measures repeat non-compliance</td></tr>
+        <tr><td>resolution_rate</td><td>Fraction of violations resolved (complied or closed). Low means persistent non-compliance</td></tr>
+        <tr><td>has_maintenance_code</td><td>Ever had a Level 1 or 2 maintenance or moderate violation</td></tr>
+        <tr><td>has_structural_code</td><td>Ever had a Level 3 severe or structural violation</td></tr>
+        <tr><td>has_fire_safety_code</td><td>Ever had a fire, egress, or hazard violation</td></tr>
+        <tr><td>has_open_structural</td><td>Has a currently open Level 3 violation</td></tr>
         <tr><td>days_since_last_viol</td><td>Days from most recent violation to TRAIN_CUTOFF</td></tr>
-        <tr><td>days_oldest_open_viol</td><td>Age of the oldest currently open violation</td></tr>
+        <tr><td>days_oldest_open_viol</td><td>Age of the oldest currently open violation in days</td></tr>
       </tbody>
     </table>
   </div>
-  <p>Trend and acceleration features capture whether a property is getting worse, improving, or stable &mdash; which a single count cannot express.</p>
+  <p>The life-history features fulfill a Fichman requirement. A property with five violations all in the last six months is different from one with five violations spread over ten years. The trend and acceleration features (<code>viol_trend_3v5</code>, <code>viol_accel_2v3</code>) capture whether a property is getting worse, improving, or stable over time, which a single count cannot express.</p>
 
   <h3>6.5 Clean &amp; Seal features</h3>
   <p>C&amp;S features focus on history and trajectory rather than current active status (which <em>is</em> the OVS label component).</p>
@@ -1059,49 +1103,83 @@ ovs_df &lt;- ovs_df %&gt;%
   </div>
 
   <h3>6.6 License features</h3>
-  <p>License features capture lifecycle trajectory.</p>
+  <p>License features capture the lifecycle trajectory of how a property's licensed use has changed over time.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Feature</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td>had_vacancy_license / n_vacancy_licenses / ever_had_vacant_lic</td><td>Vacancy license history</td></tr>
-        <tr><td>has_rental_license / has_active_rental</td><td>Current active rental <em>(excluded &mdash; direct complement of vacancy)</em></td></tr>
-        <tr><td>ever_had_rental</td><td>Ever held a rental license</td></tr>
-        <tr><td>had_rental_then_vacant</td><td>Lifecycle transition signal &mdash; strongly informative</td></tr>
-        <tr><td>license_lapse_rate</td><td>Fraction of all licenses no longer active</td></tr>
+        <tr><td>had_vacancy_license</td><td>Ever had a vacancy license regardless of current status</td></tr>
+        <tr><td>n_vacancy_licenses</td><td>Total count of vacancy licenses over time</td></tr>
+        <tr><td>ever_had_vacant_lic</td><td>Binary version of above</td></tr>
+        <tr><td>has_rental_license, has_active_rental</td><td>Current active rental license. Excluded from final model as direct complement of vacancy status</td></tr>
+        <tr><td>ever_had_rental</td><td>Ever had a rental license</td></tr>
+        <tr><td>had_rental_then_vacant</td><td>Had a rental license, then later got a vacancy license. Lifecycle transition signal</td></tr>
+        <tr><td>license_lapse_rate</td><td>Fraction of all licenses that are no longer active</td></tr>
         <tr><td>days_since_last_lic</td><td>Recency of most recent license activity</td></tr>
       </tbody>
     </table>
   </div>
-  <p>The <code>had_rental_then_vacant</code> feature is unusually informative &mdash; a property that went from rental to vacancy license has a documented owner-reported history of occupancy followed by abandonment.</p>
+  <p>The <code>had_rental_then_vacant</code> feature is unusually informative. A property that went from having a rental license to a vacancy license has a documented owner-reported history of occupancy followed by abandonment. That transition is a strong qualitative signal of the kind of properties the model aims to predict.</p>
 
   <h3>6.7 Unsafe &amp; Imminently Dangerous features</h3>
   <p>These orders sit outside the regular violation system. Features are simple &mdash; a binary "has ever" flag, a count, and days since the most recent order. These were not part of the OVS definition, so there is no leakage risk.</p>
 
   <h3>6.8 Real Estate Transfer (RTT) features</h3>
-  <p>RTT records are filtered to deed and sheriff sale documents (excluding mortgages and other encumbrances) before <code>TRAIN_CUTOFF</code>.</p>
+  <p>RTT records are filtered to deed and sheriff sale documents (excluding mortgages, liens, and other encumbrances) before <code>TRAIN_CUTOFF</code>. The join key is detected automatically by scanning for <code>opa_account_num</code> or <code>parcel_number</code> in the column names.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Feature</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td>n_transfers_total / 5yr / 3yr</td><td>Deed or transfer counts</td></tr>
-        <tr><td>n_deed_transfers</td><td>Arms-length deed transfers with prices</td></tr>
-        <tr><td>n_sheriff_sales / had_sheriff_sale / sheriff_sale_recent</td><td>Foreclosure indicators</td></tr>
-        <tr><td>log_price_change</td><td><code>log(last_deed_price) - log(prior_deed_price)</code>. Negative = decline</td></tr>
-        <tr><td>days_since_last_transfer</td><td>Days from most recent any-type transfer</td></tr>
+        <tr><td>n_transfers_total</td><td>Total deed or transfer count, all time</td></tr>
+        <tr><td>n_transfers_5yr</td><td>Transfers in last 5 years</td></tr>
+        <tr><td>n_transfers_3yr</td><td>Transfers in last 3 years</td></tr>
+        <tr><td>n_deed_transfers</td><td>Arms-length deed transfers with recorded prices</td></tr>
+        <tr><td>n_sheriff_sales</td><td>Total sheriff foreclosure sale count</td></tr>
+        <tr><td>had_sheriff_sale</td><td>Ever had a sheriff sale</td></tr>
+        <tr><td>sheriff_sale_recent</td><td>Sheriff sale within last 5 years</td></tr>
+        <tr><td>log_price_change</td><td><code>log(last_deed_price) - log(prior_deed_price)</code>. Negative means price declined</td></tr>
+        <tr><td>days_since_last_transfer</td><td>Days from most recent any-type transfer to TRAIN_CUTOFF</td></tr>
       </tbody>
     </table>
   </div>
-  <p>OPA's <code>sale_price</code> captures only the most recent transaction. RTT adds the full ownership history. Frequent re-sales can indicate a distressed property being flipped without rehabilitation; a recent sheriff sale is a direct foreclosure indicator; a log price decline between two most recent deeds suggests the market is pricing in deterioration risk.</p>
+  <p>OPA's <code>sale_price</code> and <code>sale_date</code> capture only the most recent transaction. RTT adds the full ownership history. Frequent re-sales can indicate a distressed property being flipped without rehabilitation. A sheriff sale in the recent past is a direct foreclosure indicator. A log price decline between the two most recent deed sales suggests the market is pricing in deterioration risk.</p>
+  <p><code>last_transfer_price</code> and <code>prior_transfer_price</code> are left as <code>NA</code> when a parcel has fewer than two deed transfers with recorded prices. The Random Forest recipe handles these via median imputation. <code>log_price_change</code> is also left as <code>NA</code> in these cases.</p>
 
   <h3>6.9 OPA-derived features</h3>
-  <p>Derived from OPA fields already present in <code>ovs_residential.csv</code>: <code>exterior_condition</code>, <code>building_age</code>, <code>log_market_value</code> <em>(excluded &mdash; assessed value bias)</em>, <code>log_livable_area</code>, <code>log_sale_price</code>, <code>days_since_sale</code>, <code>years_since_sale</code>, <code>is_poor_condition</code>, <code>value_per_sqft</code> <em>(excluded &mdash; assessed value bias)</em>.</p>
+  <p>Derived from the OPA fields already present in <code>ovs_residential.csv</code>.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Feature</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>exterior_condition</td><td>Assessor-rated condition on a 1 to 7 scale</td></tr>
+        <tr><td>building_age</td><td>2024 minus <code>year_built</code>. Capped at 200 years, negative values set to NA</td></tr>
+        <tr><td>log_market_value</td><td><code>log1p(market_value)</code>. Excluded from the final model due to assessed value bias</td></tr>
+        <tr><td>log_livable_area</td><td><code>log1p(total_livable_area)</code></td></tr>
+        <tr><td>log_sale_price</td><td><code>log1p(sale_price)</code></td></tr>
+        <tr><td>days_since_sale</td><td>Days from most recent OPA sale to TRAIN_CUTOFF</td></tr>
+        <tr><td>years_since_sale</td><td><code>days_since_sale / 365.25</code></td></tr>
+        <tr><td>is_poor_condition</td><td>Binary. <code>exterior_condition &gt;= 5</code></td></tr>
+        <tr><td>value_per_sqft</td><td><code>market_value / total_livable_area</code>. NA when area is zero</td></tr>
+      </tbody>
+    </table>
+  </div>
 
   <h3>6.10 Assemble the feature matrix</h3>
-  <p>All feature groups are left-joined on <code>parcel_number</code>. Left joins ensure every parcel appears even with no records in a particular source. NA fill logic: integer counts &rarr; 0; rate fields &rarr; 0; trend / acceleration &rarr; 0; days fields &rarr; large sentinel from year 2000; RTT price fields left as NA, handled by the model recipe.</p>
+  <p>All feature groups are left-joined to the OPA base table on <code>parcel_number</code>. Left joins ensure every parcel appears even if it has no records in a particular source. A parcel with no violation history is kept with zeros, not dropped.</p>
+  <p><strong>NA fill logic.</strong></p>
+  <ul style="margin: 0 0 1.3em 18px;">
+    <li>Integer counts (violation counts, C&amp;S counts, and so on) are filled to zero. A missing parcel means no events occurred.</li>
+    <li>Rate fields (resolution rate, lapse rate) are filled to zero.</li>
+    <li>Trend and acceleration fields are filled to zero. No activity means no change.</li>
+    <li>Days fields are filled to <code>as.integer(TRAIN_CUTOFF - as.Date("2000-01-01"))</code> &mdash; a large sentinel value meaning "no activity on record before the data starts".</li>
+    <li>RTT price fields (<code>log_price_change</code>, raw prices) are left as <code>NA</code>. Genuinely missing when there are fewer than two arms-length sales. Handled by the model recipe.</li>
+  </ul>
 
-  <h3>6.11 Missing-value audit &amp; 6.12 Univariate correlation screen</h3>
-  <p>A summary table reports each feature's missing-value count and percentage. The highest-missing features are <code>days_oldest_open_viol</code> (only populated for parcels with open violations) and price-related fields with fewer than two transactions. Pearson correlations between each numeric feature and <code>ovs</code> are computed and the top 20 are plotted as a sanity check.</p>
+  <h3>6.11 Missing-value audit</h3>
+  <p>A summary table shows every feature with its missing-value count and percentage, grouped into flags (Complete, less than 5 percent, 5 to 20 percent, more than 20 percent). Most engineered features are complete. The highest-missing features are <code>days_oldest_open_viol</code> (only populated for parcels with open violations) and price-related fields with fewer than two transactions.</p>
+
+  <h3>6.12 Univariate correlation screening</h3>
+  <p>Pearson correlations between each numeric feature and <code>ovs</code> are computed and the top 20 by absolute value are plotted. This acts as a quick sanity check &mdash; the top features should be conceptually sensible vacancy indicators (violation counts, C&amp;S history, license flags).</p>
   <div class="callout callout-blue">
     <div class="callout-label">Output</div>
     <p><code>data/features_residential.csv</code> &mdash; ~520K parcels (522,481 unique) by 80+ columns.</p>
@@ -1117,55 +1195,63 @@ ovs_df &lt;- ovs_df %&gt;%
 <section id="step-7">
   <div class="section-label">07 &mdash; Modeling</div>
   <h2>Tidymodeling &amp; the Vacancy Risk Score Ensemble</h2>
-  <p><code>code/python/04a_tidymodeling.ipynb</code> is the heart of the production pipeline. It fits four base learners on the engineered feature matrix, blends two of them into a calibrated ensemble (the <strong>Vacancy Risk Score</strong>), and exports the artefacts every downstream notebook depends on.</p>
+  <p><code>code/r_code/04a_tidymodeling.Rmd</code> is the heart of the production pipeline. It fits four base learners on the engineered feature matrix, blends two of them into a calibrated ensemble (the <strong>Vacancy Risk Score</strong>), and exports the artefacts every downstream step depends on.</p>
 
-  <h3>7.1 Define the model variable set</h3>
-  <p><code>model_vars</code> is the single source of truth for the feature set. Excluded features and reasons:</p>
+  <h3>7.1 Load features and define the model variable set</h3>
+  <p><code>features_residential.csv</code> is loaded directly. <code>model_vars</code> is an explicit character vector and is the single source of truth for the feature set used everywhere downstream. The exclusions listed below capture the leakage and bias decisions made during feature engineering.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Excluded Feature</th><th>Reason</th></tr></thead>
       <tbody>
-        <tr><td>n_violations_open</td><td>Direct count of open violations &mdash; near-exact OVS proxy</td></tr>
+        <tr><td>n_violations_open</td><td>Direct count of open violations. The OVS violation rule is "any open violation". Near-exact proxy</td></tr>
         <tr><td>has_open_violation</td><td>One half of the OVS violation rule</td></tr>
-        <tr><td>has_vacancy_kw_code</td><td>The other half &mdash; violation code matches keyword list</td></tr>
-        <tr><td>has_open_vacancy_kw</td><td>Intersection &mdash; directly reconstructs the OVS violation component</td></tr>
+        <tr><td>has_vacancy_kw_code</td><td>The other half. Violation code matches the keyword list</td></tr>
+        <tr><td>has_open_vacancy_kw</td><td>Intersection of both. Directly reconstructs the OVS violation component</td></tr>
         <tr><td>cs_truly_active</td><td>Current active C&amp;S status is the OVS Clean &amp; Seal rule</td></tr>
-        <tr><td>cs_active_2yr</td><td>Too close to current status</td></tr>
-        <tr><td>has_rental_license / has_active_rental</td><td>Functional complement of vacancy license status</td></tr>
-        <tr><td>log_market_value / value_per_sqft</td><td>OPA assessed values carry documented racial and geographic bias</td></tr>
-        <tr><td>last_transfer_price / prior_transfer_price</td><td>Redundant with <code>log_sale_price</code></td></tr>
+        <tr><td>cs_active_2yr</td><td>Too close to current status. Near-proxy for <code>cs_truly_active</code></td></tr>
+        <tr><td>has_rental_license, has_active_rental</td><td>Current active rental is the functional complement of vacancy license status</td></tr>
+        <tr><td>log_market_value, value_per_sqft</td><td>OPA assessed values carry well-documented racial and geographic bias (Fichman guidance)</td></tr>
+        <tr><td>last_transfer_price, prior_transfer_price</td><td>Redundant with <code>log_sale_price</code>. <code>log_price_change</code> captures the useful signal instead</td></tr>
       </tbody>
     </table>
   </div>
+  <p>Cache files in <code>data_py/cache/04a/</code> are fingerprinted with a SHA-1 of <code>model_vars</code>. Any change to the feature list invalidates stale fits silently.</p>
 
   <h3>7.2 Stratified 70/30 train/test split</h3>
-  <p>A temporal split was evaluated and discarded. Activity recency is itself a vacancy proxy via fields like <code>days_since_last_viol</code>, so a temporal split causes distributional shift (train OVS = 1 rate ~0.2%, test rate ~6.9%) and AUC estimates become unreliable. Stratified random split preserves production prevalence ~1.1% on both sides. Temporal generalization is tested separately in Step 14.</p>
+<pre>split    &lt;- initial_split(df, prop = 0.70, strata = ovs)
+train_df &lt;- training(split)
+test_df  &lt;- testing(split)</pre>
+  <p>A temporal split was evaluated and discarded earlier in the pipeline. Activity recency is itself a vacancy proxy via fields like <code>days_since_last_viol</code> and <code>cs_active_2yr</code>. A temporal split therefore causes distributional shift, with train OVS-equal-one rate around 0.2 percent and test rate around 6.9 percent. AUC estimates become unreliable. Stratified random split ensures both train (around 364K rows) and test (around 156K rows) have approximately the production-prevalence OVS-equal-one rate of around 1.1 percent. Temporal generalization is tested separately in Step 14.</p>
 
-  <h3>7.3 Preprocessing pipeline</h3>
-  <p>Every base learner is wrapped in a sklearn <code>Pipeline</code>:</p>
+  <h3>7.3 Preprocessing recipe</h3>
+  <p>Every base learner is wrapped in a <code>recipes</code> recipe with the same three steps in the same order.</p>
   <ol style="margin: 0 0 1.3em 18px;">
-    <li><code>SimpleImputer(strategy="median")</code> &mdash; imputes NAs in <code>log_price_change</code>, <code>days_oldest_open_viol</code>, <code>log_sale_price</code>.</li>
-    <li><code>VarianceThreshold(threshold=0)</code> &mdash; removes zero-variance columns.</li>
-    <li><code>SMOTE</code> &mdash; synthetic minority oversampling applied only to the training fold of each CV split via <code>imblearn.pipeline.Pipeline</code>, ensuring no leakage to the test fold.</li>
+    <li><code>step_impute_median()</code> &mdash; imputes NAs primarily in <code>log_price_change</code>, <code>days_oldest_open_viol</code>, and <code>log_sale_price</code>.</li>
+    <li><code>step_zv()</code> &mdash; removes zero-variance columns that survived feature engineering.</li>
+    <li><code>themis::step_rose()</code> &mdash; synthetic minority oversampling applied only to the training fold of each cross-validation split. Wrapping it in the recipe ensures the resampling step never leaks into the test fold.</li>
   </ol>
+  <p>OVS prevalence sits at around 1.1 percent. Without correction, models tend to drive themselves toward the majority class. ROSE rebalances the training data before the model is fit. Class-weight tuning (described below) provides a complementary lever inside the model itself.</p>
 
   <h3>7.4 Four base learners</h3>
+  <p>Each learner is fit with hyperparameters chosen up-front rather than searched on every run. Tuning results from earlier runs are kept in <code>data_py/rf_tune_results.csv</code>, <code>data_py/xgb_tune_results.csv</code>, and <code>data_py/lgb_tune_results.csv</code>.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Model</th><th>Configuration</th></tr></thead>
       <tbody>
-        <tr><td>Logistic Regression</td><td>L2 regularized, <code>class_weight="balanced"</code></td></tr>
-        <tr><td>Random Forest</td><td><code>n_estimators=500</code>, <code>max_features=7</code>, <code>min_samples_leaf=5</code>, balanced</td></tr>
-        <tr><td>XGBoost</td><td>Pre-tuned hyperparameters, <code>scale_pos_weight</code> tuned to prevalence</td></tr>
-        <tr><td>LightGBM</td><td>Pre-tuned hyperparameters, balanced class weight</td></tr>
+        <tr><td>Logistic Regression</td><td><code>glm</code> with L2 regularization via <code>glmnet</code>, class weights inversely proportional to prevalence</td></tr>
+        <tr><td>Random Forest</td><td><code>ranger</code> with <code>num.trees = 500</code>, <code>mtry = 7</code>, <code>min.node.size = 5</code>, class weights set to balance</td></tr>
+        <tr><td>XGBoost</td><td>Pre-tuned hyperparameters loaded from <code>xgb_tune_results.csv</code>, <code>scale_pos_weight</code> tuned to prevalence</td></tr>
+        <tr><td>LightGBM</td><td>Pre-tuned hyperparameters loaded from <code>lgb_tune_results.csv</code>, class weights set to balance via <code>bonsai</code></td></tr>
       </tbody>
     </table>
   </div>
+  <p>The Random Forest <code>mtry</code> value of seven corresponds approximately to the floor of the square root of the feature count, matching the canonical default for RF on this size of feature set.</p>
 
   <h3>7.5 The Vacancy Risk Score ensemble</h3>
-  <p>The production score is a 50/50 average of the calibrated Logit and Random Forest probabilities. XGBoost and LightGBM are kept as diagnostic comparators only.</p>
-<pre>ensemble_prob_raw  = 0.5 * logit_prob_raw + 0.5 * rf_prob_raw
-ensemble_prob      = isotonic_ensemble.transform(ensemble_prob_raw)</pre>
+  <p>The production score is a 50/50 average of the calibrated Logit and Random Forest probabilities. XGBoost and LightGBM are kept as diagnostic comparators only. They are reported in the model thresholds table and ablation results, but do not feed the production ensemble.</p>
+<pre>ensemble_prob_raw &lt;- 0.5 * logit_prob_raw + 0.5 * rf_prob_raw
+ensemble_prob     &lt;- predict(isotonic_ensemble, ensemble_prob_raw)</pre>
+  <p>Isotonic regression is fit on the test set predictions of the raw ensemble.</p>
   <p>Vacancy is rare. Raw probabilities cluster well below 0.5 even for parcels the model is confident about. Isotonic calibration maps the raw score back to honest empirical positive rates &mdash; even the very top one percent of parcels is only around 59% truly vacant, so the highest calibrated probability is around 0.6, not 1.0.</p>
   <div class="callout">
     <div class="callout-label">Important Implication</div>
@@ -1186,20 +1272,37 @@ ensemble_prob      = isotonic_ensemble.transform(ensemble_prob_raw)</pre>
   </div>
   <p>Variable importance from the Random Forest is dominated by C&amp;S history, vacancy license history, violation trajectories, and recency signals. RTT features (<code>had_sheriff_sale</code>, <code>log_price_change</code>) appear in the top half when they carry independent signal.</p>
 
-  <h3>7.7 Outputs</h3>
-  <p>The key output is <code>all_predictions_rf.csv</code>, one row per parcel with all probabilities (calibrated and raw), <code>ensemble_flag</code>, <code>risk_score</code>, and <code>qtile_tier</code>.</p>
+  <h3>7.7 Outputs from 04a</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Contents</th></tr></thead>
+      <tbody>
+        <tr><td>data_py/model_logit_final.rds</td><td>Fitted Logistic Regression pipeline</td></tr>
+        <tr><td>data_py/model_rf_final.rds</td><td>Fitted Random Forest pipeline (around 178 MB)</td></tr>
+        <tr><td>data_py/model_xgb_final.rds</td><td>Fitted XGBoost pipeline</td></tr>
+        <tr><td>data_py/model_lgb_final.rds</td><td>Fitted LightGBM pipeline</td></tr>
+        <tr><td>data_py/calibrators.rds</td><td>Per-model isotonic calibrators plus the ensemble calibrator</td></tr>
+        <tr><td>data_py/all_predictions_rf.csv</td><td>One row per parcel (around 520K) with all model probabilities, calibrated and raw, ensemble flag, risk_score, qtile_tier</td></tr>
+        <tr><td>data_py/model_thresholds.csv</td><td>Per-model Youden thresholds plus AUC, sens, spec, plus an <code>is_best</code> boolean</td></tr>
+        <tr><td>data_py/rf_tune_results.csv</td><td>Cached RF tuning grid</td></tr>
+        <tr><td>data_py/xgb_tune_results.csv</td><td>Cached XGBoost tuning grid</td></tr>
+        <tr><td>data_py/lgb_tune_results.csv</td><td>Cached LightGBM tuning grid</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>The <code>all_predictions_rf.csv</code> columns are worth memorizing.</strong></p>
   <ul style="margin: 0 0 1.3em 18px;">
     <li><code>risk_score</code> &mdash; integer 0&ndash;100, ensemble probability times 100. Use for dashboard display.</li>
     <li><code>ensemble_prob</code> &mdash; calibrated probability 0&ndash;1. Use for "X% chance of being vacant" callouts.</li>
-    <li><code>ensemble_prob_raw</code> &mdash; uncalibrated. Use for ranking and sorting (preserves spread).</li>
-    <li><code>ensemble_flag</code> &mdash; 1 = top one percent by raw rank. Use for operational triage.</li>
-    <li><code>qtile_tier</code> &mdash; five-bucket rank for tier badges in UI ("Top 1%", etc.).</li>
+    <li><code>ensemble_prob_raw</code> &mdash; uncalibrated. Use for ranking and sorting because it preserves spread.</li>
+    <li><code>ensemble_flag</code> &mdash; 1 equals top one percent by raw rank. Use for operational triage.</li>
+    <li><code>qtile_tier</code> &mdash; five-bucket rank for tier badges in UI such as "Top 1 percent (highest risk)".</li>
   </ul>
 
   <div class="figure-pair">
     <div class="figure">
-      <img src="graphs/python/rose_subsampling_comparison.png" alt="SMOTE versus no subsampling" loading="lazy">
-      <div class="figure-caption"><span class="fig-num">Figure 7.1</span><p><strong>SMOTE versus no subsampling.</strong> Class-balance lever before model fitting.</p></div>
+      <img src="graphs/python/rose_subsampling_comparison.png" alt="ROSE versus no subsampling" loading="lazy">
+      <div class="figure-caption"><span class="fig-num">Figure 7.1</span><p><strong>ROSE versus no subsampling.</strong> Class-balance lever before model fitting.</p></div>
     </div>
     <div class="figure">
       <img src="graphs/python/overfit_check_density.png" alt="Train versus test density" loading="lazy">
@@ -1242,29 +1345,31 @@ ensemble_prob      = isotonic_ensemble.transform(ensemble_prob_raw)</pre>
 <section id="step-8">
   <div class="section-label">08 &mdash; Spatial Validation</div>
   <h2>Spatial Validation &amp; Prediction Confidence Intervals</h2>
-  <p><code>code/python/04b_model_validation.ipynb</code> tests whether the production ensemble generalizes to data it was not trained on. The motivating concern is spatial autocorrelation &mdash; parcels in the same neighborhood share many features, including features that are themselves built from neighborhood activity. A standard random split overstates AUC because the test set contains parcels whose neighbors taught the model how to score them.</p>
+  <p><code>code/r_code/04b_model_validation.Rmd</code> tests whether the production ensemble generalizes to data it was not trained on. The motivating concern is spatial autocorrelation &mdash; parcels in the same neighborhood share many features, including features that are themselves built from neighborhood activity. A standard random split overstates AUC because the test set contains parcels whose neighbors taught the model how to score them.</p>
 
   <h3>8.1 Spatial cross-validation, 10-fold by ZIP group</h3>
-<pre>spatial_cv = GroupKFold(n_splits=10)
-for fold, (tr, te) in enumerate(spatial_cv.split(X, y, groups=zip_code)):
-    ...</pre>
-  <p><code>GroupKFold</code> ensures all parcels in a given ZIP stay together &mdash; either all in training or all in test, never split. With ten folds, each holds out approximately ten percent of Philadelphia ZIPs.</p>
+<pre>folds &lt;- group_vfold_cv(df, group = zip_code, v = 10)
+fits  &lt;- map(folds$splits, ~ fit(workflow, data = analysis(.x)))</pre>
+  <p><code>group_vfold_cv</code> ensures that all parcels in a given ZIP code stay together &mdash; either all in training or all in test, never split across both. With ten folds, each fold holds out approximately ten percent of Philadelphia ZIPs. A parcel in 19139 cannot show up in both train fold 1 and test fold 2, so the model cannot lean on memorized neighborhood patterns.</p>
+  <p>A per-fold line chart shows AUC and J-Index across the ten folds. High variance across folds would suggest the model struggles with some geographic areas.</p>
   <div class="callout callout-blue">
     <div class="callout-label">Result</div>
     <p>Spatial CV mean AUC is <strong>0.8877 &plusmn; 0.0064</strong> across the ten folds &mdash; the lower-bound, conservative AUC for the RF component without ensemble calibration.</p>
   </div>
 
   <h3>8.2 Leave-One-ZIP-Out (LOGO) cross-validation</h3>
-  <p>LOGO takes spatial CV to its extreme. Each of Philadelphia's residential ZIP codes is held out exactly once across separate model fits. To keep total compute bounded, the notebook samples 15 of the ~45 residential ZIPs uniformly at random. None of the sampled ZIPs fall below AUC 0.70; median AUC is 0.95+. <strong>Mean LOGO AUC: 0.8849</strong>, very close to the 10-fold spatial CV result.</p>
+  <p>LOGO takes the spatial CV to its extreme. Each of Philadelphia's residential ZIP codes is held out exactly once across separate model fits. To keep total compute bounded, the step samples 15 of the roughly 45 residential ZIPs uniformly at random and fits a fresh RF for each.</p>
+  <p>Per-ZIP AUC results are plotted as a ranked bar chart. ZIPs with AUC less than 0.70 would be highlighted in red as candidates for manual review. In the most recent run none of the sampled ZIPs fall below that line, with median AUC of 0.95 and above. The mean LOGO AUC is <strong>0.8849</strong>, very close to the 10-fold spatial CV result.</p>
+  <p>LOGO matters for deployment. If the city ever applies the model to newly annexed areas, or if future data includes ZIPs not well represented in the training window, LOGO CV predicts how well the model will perform in those situations.</p>
 
-  <h3>8.3 Prediction confidence intervals from RF tree variance</h3>
+  <h3>8.3 Prediction confidence intervals from the RF tree variance</h3>
   <p>The Random Forest is leveraged for free uncertainty quantification by computing per-tree probabilities and taking their dispersion across the 500 estimators.</p>
-<pre>tree_probs = np.column_stack([t.predict_proba(X_test)[:, 1]
-                              for t in rf.estimators_])
-rf_prob = tree_probs.mean(axis=1)
-rf_se   = tree_probs.std(axis=1) / np.sqrt(rf.n_estimators)
-ci_lower = np.clip(rf_prob - 1.96 * rf_se, 0, 1)
-ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
+<pre>tree_probs &lt;- predict(rf_fit, test_df, predict.all = TRUE)$predictions[, 2, ]
+rf_prob    &lt;- rowMeans(tree_probs)
+rf_se      &lt;- apply(tree_probs, 1, sd) / sqrt(rf_fit$num.trees)
+ci_lower   &lt;- pmax(0, rf_prob - 1.96 * rf_se)
+ci_upper   &lt;- pmin(1, rf_prob + 1.96 * rf_se)
+ci_width   &lt;- ci_upper - ci_lower</pre>
   <p>A parcel with a 0.60 RF probability and CI width 0.05 is a confident prediction &mdash; the trees agree. The same 0.60 probability with CI width 0.35 is ambiguous &mdash; different subsets of trees give wildly different predictions.</p>
   <ul style="margin: 0 0 1.3em 18px;">
     <li>Mean CI width across the test set: ~0.0466.</li>
@@ -1274,12 +1379,17 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
   </ul>
 
   <h3>8.4 Sanity checks</h3>
+  <p>Four checks confirm the model is learning from the right signals.</p>
   <ul style="margin: 0 0 1.3em 18px;">
-    <li><strong>Feature-importance alignment.</strong> Top 5 are <code>n_violations_total</code>, <code>days_since_last_viol</code>, <code>n_cs_total</code>, <code>n_violations_recent</code>, <code>has_fire_safety_code</code> &mdash; all in the expected list.</li>
-    <li><strong>Calibration curve.</strong> Lies very close to the 45&deg; diagonal, slightly under-predicting vacancy by ~0.03 percentage points on average.</li>
-    <li><strong>Known-vacant holdout.</strong> Parcels with <code>cs_truly_active</code> score ~2.5&times; the no-signal group; parcels with a vacancy license ~4.5&times;.</li>
-    <li><strong>Partial dependence.</strong> Predicted probability rises monotonically with violation count, as expected.</li>
+    <li><strong>Feature-importance alignment.</strong> Top 20 features by Gini importance are compared against an <code>expected_top</code> list of domain-sensible features (vacancy license history, C&amp;S total, license lapse rate, days since last violation). The five strongest signals are <code>n_violations_total</code>, <code>days_since_last_viol</code>, <code>n_cs_total</code>, <code>n_violations_recent</code>, and <code>has_fire_safety_code</code>. All sit comfortably in the expected list.</li>
+    <li><strong>Calibration curve.</strong> The test set is binned by predicted probability and the observed vacancy rate within each bin is plotted against the bin midpoint. The original ensemble lies very close to the 45&deg; diagonal, slightly under-predicting vacancy by around 0.03 percentage points on average.</li>
+    <li><strong>Known-vacant holdout check.</strong> Test parcels are grouped by which OVS signal they carry (<code>cs_truly_active</code>, <code>had_vacancy_license</code>, <code>has_open_vacancy_kw</code>, or none). Mean predicted probability is reported per group. Parcels with <code>cs_truly_active</code> score around 2.5 times higher than the no-signal group, and parcels with a vacancy license score around 4.5 times higher. The model is responding to its strongest available signals.</li>
+    <li><strong>Partial dependence spot-check.</strong> <code>n_violations_total</code> is varied from its 1st to 99th percentile while all other features are held at training-set medians. The predicted probability rises monotonically with violation count, as expected.</li>
   </ul>
+  <div class="callout callout-blue">
+    <div class="callout-label">Outputs</div>
+    <p><code>data_py/spatial_cv_metrics.csv</code> per-fold metrics, <code>data_py/logo_cv_metrics.csv</code> per-ZIP metrics, <code>data_py/predictions_with_ci.csv</code> test set with CI bounds, and <code>data_py/validation_summary.csv</code> headline metrics table.</p>
+  </div>
 
   <div class="figure-pair">
     <div class="figure">
@@ -1307,13 +1417,13 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-9">
   <div class="section-label">09 &mdash; Subgroup &amp; Equity</div>
   <h2>Subgroup Generalization &amp; the Equity Audit</h2>
-  <p><code>code/python/04b_vpi_comparison.ipynb</code> breaks the citywide AUC apart along three operationally relevant axes (ZIP, building category, ward) and runs an equity audit by census-tract median household income.</p>
+  <p><code>code/r_code/04b_vpi_comparison.Rmd</code> breaks the citywide AUC apart along three operationally relevant axes (ZIP, building category, ward) and runs an equity audit by census-tract median household income.</p>
 
   <h3>9.1 Frame and tier classification</h3>
   <p>Predictions are joined to features (for ZIP and tract) and OPA (for ward and category). A five-tier classification using equal-width 0.2 probability buckets &mdash; Very Unlikely, Unlikely, Maybe, Likely, Very Likely &mdash; is applied to every parcel as <code>prob_tier</code>. The full population skews heavily into the lowest tier (~99.88% Very Unlikely). The Very Likely tier (&gt; 0.8) holds about 0.47% &mdash; the operational high-risk pool.</p>
 
   <h3>9.2 AUC by ZIP code</h3>
-  <p>For each ZIP with at least 50 parcels and 5 observed vacants, AUC is computed on the subset. Forty-one ZIPs survive the filter.</p>
+  <p>For each ZIP with at least 50 parcels and at least 5 observed vacants, AUC is computed by calling <code>roc_auc_score</code> on the subset. Forty-one ZIPs survive the minimum-N filter. Results are ranked and plotted as a horizontal bar chart with ZIPs colored red where AUC falls below 0.70.</p>
   <ul style="margin: 0 0 1.3em 18px;">
     <li>Median per-ZIP AUC: 0.973.</li>
     <li>5th percentile: 0.949.</li>
@@ -1337,7 +1447,7 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
   <p>Tier counts and observed OVS rates per tier are computed within each category. The Very Likely tier shows significantly higher observed vacancy rates than Very Unlikely inside every category &mdash; confirming the probability scores discriminate within building type and not just on average.</p>
 
   <h3>9.5 Ward-level summary</h3>
-  <p>For each of Philadelphia's 66 wards: parcel count, observed vacancy count and rate, mean predicted probability, count in Very Likely and Likely tiers, and a combined "high risk" rate (P &ge; 0.6). Top wards by mean predicted:</p>
+  <p>Philadelphia's 66 political wards are used as an aggregation unit. For each ward this step reports parcel count, observed vacancy count and rate, mean predicted probability, count in Very Likely and Likely tiers, and a combined "high risk" rate (probability of 0.6 or higher). Top wards by mean predicted probability:</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Ward</th><th>Mean predicted</th></tr></thead>
@@ -1369,6 +1479,7 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
     <div class="callout-label">Headline Equity Finding</div>
     <p>AUC is consistent across all income quintiles (0.968&ndash;0.978). The model identifies vacancy with the same ranking quality whether the parcel sits in a low-income or high-income tract. Mean predicted probability tracks observed rate closely in every quintile &mdash; the model is not systematically over- or under-predicting in any income band. It concentrates absolute flag counts in lower-income areas because vacancy is genuinely concentrated there.</p>
   </div>
+  <p><strong>Outputs.</strong> <code>data_py/predictions_04b.csv</code> parcel frame, <code>data_py/zip_auc_04b.csv</code> per-ZIP AUC, <code>data_py/ward_summary_04b.csv</code> per-ward rollup, <code>data_py/equity_income_auc.csv</code> equity audit, plus a static ZCTA choropleth and an interactive Leaflet map.</p>
 
   <div class="figure-pair">
     <div class="figure">
@@ -1396,7 +1507,7 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-10">
   <div class="section-label">10 &mdash; Vs City VPI</div>
   <h2>Head-to-Head Comparison Against the City VPI</h2>
-  <p><code>code/python/04c_vs_city_vpi.ipynb</code> compares the production ensemble to the City of Philadelphia's binary Vacant Property Indicator (VPI) head-to-head on the residential-only universe. After filtering the 8,048-building VPI to residential parcels, 6,418 (~79.7%) remain in scope.</p>
+  <p><code>code/r_code/04c_vs_city_vpi.Rmd</code> compares the production ensemble to the City of Philadelphia's binary Vacant Property Indicator (VPI) head-to-head on the residential-only universe. <code>rawdata/vpi_bldg.geojson</code> contains 8,048 buildings flagged by the City. After filtering to residential parcels via the OPA join, 6,418 parcels (~79.7%) remain in scope. The remaining 20-plus percent are commercial or industrial properties not covered by the residential model.</p>
 
   <h3>10.1 Match-prevalence comparison</h3>
   <p>The ensemble probability is thresholded at the level that produces approximately the same number of positives as the City's VPI (~6,400 parcels).</p>
@@ -1431,6 +1542,10 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 
   <h3>10.4 High-probability OVS = 0 candidates</h3>
   <p>A separate analysis isolates the top 339 parcels with the highest ensemble probability that have OVS = 0. Twenty-seven of those also appear in the City VPI &mdash; independent corroboration that the parcel is genuinely vacant despite OVS missing it. The remaining 312 are candidate false positives or genuinely undetected vacants and are exported with addresses for inspector review.</p>
+  <div class="callout callout-blue">
+    <div class="callout-label">Outputs</div>
+    <p><code>data_py/vs_city_vpi_headline.csv</code>, <code>data_py/vs_city_vpi_buckets.csv</code>, <code>data_py/vs_city_vpi_zip.csv</code>, <code>data_py/vs_city_vpi_parcel.csv</code>, <code>data_py/vs_city_vpi_map.html</code> (interactive overlay of all three buckets), and <code>data_py/vs_city_vpi_high_prob_ovs0_map.html</code> (the candidate review map).</p>
+  </div>
 
   <div class="figure">
     <img src="graphs/python/vs_city_vpi_roc_pr.png" alt="Ensemble vs VPI ROC and PR curves" loading="lazy">
@@ -1462,10 +1577,10 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-11">
   <div class="section-label">11 &mdash; Recalibration</div>
   <h2>Held-Out Recalibration</h2>
-  <p><code>code/python/04d_recalibration.ipynb</code> refits the calibrator on a held-out half of the test split and evaluates calibration on the other half. The original 04a calibrator was fit on the full test set &mdash; a deliberate shortcut that allows a small amount of optimism into the calibrated probabilities.</p>
+  <p><code>code/r_code/04d_recalibration.Rmd</code> refits the calibrator on a held-out half of the test split and evaluates calibration on the other half. The original 04a calibrator was fit on the full test set &mdash; a deliberate shortcut for an initial release that allows a small amount of optimism into the calibrated probabilities.</p>
 
   <h3>11.1 Split, refit, measure</h3>
-  <p>The 30% test set is split 50/50 stratified by OVS. The raw ensemble probabilities for the calibration half are used to fit a fresh <code>IsotonicRegression</code>; the new calibrator is applied to the full population producing <code>ensemble_prob_v2</code>.</p>
+  <p>The 30% test set from 04a is split 50/50 stratified by OVS. The raw ensemble probabilities for the calibration half are used to fit a fresh <code>IsotonicRegression</code>; the new calibrator is applied to the full population producing <code>ensemble_prob_v2</code>. On the evaluation half (which neither the model nor either calibrator has seen):</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Metric (evaluation half)</th><th>Original</th><th>Recalibrated</th></tr></thead>
@@ -1477,6 +1592,10 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
     </table>
   </div>
   <p>Both reliability curves follow the diagonal, but the recalibrated version stays closer across all probability bins. <strong>Practical takeaway:</strong> the original calibrator was already nearly correct &mdash; <code>ensemble_prob_v2</code> is the recommendation for production, but the substantive difference is small enough that consumers already on <code>ensemble_prob</code> do not need to migrate urgently.</p>
+  <div class="callout callout-blue">
+    <div class="callout-label">Outputs</div>
+    <p><code>data_py/calibrators_v2.rds</code> and <code>data_py/predictions_calibrated.csv</code> (full population with the new column).</p>
+  </div>
 
   <div class="figure">
     <img src="graphs/python/recalibration_reliability.png" alt="Reliability curve, original versus recalibrated" loading="lazy">
@@ -1488,7 +1607,7 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-12">
   <div class="section-label">12 &mdash; Operational Capacity</div>
   <h2>Operational Thresholds &amp; Per-Ward Capacity</h2>
-  <p><code>code/python/04e_operational_thresholds.ipynb</code> translates model scores into actionable inspection capacity. Rather than choose one citywide threshold, it applies a per-ward capacity policy: inspect the top N parcels per ward, where N is some fraction of the ward's residential parcel count.</p>
+  <p><code>code/r_code/04e_operational_thresholds.Rmd</code> translates model scores into actionable inspection capacity. Rather than choose one citywide threshold, it applies a per-ward capacity policy: inspect the top N parcels per ward, where N is some fraction of the ward's residential parcel count.</p>
 
   <h3>12.1 The capacity policy</h3>
   <p><code>CAPACITY_PCT</code> is parameterized at one percent of each ward's residential parcels per inspection cycle. Within each ward, the top N parcels by ensemble probability are flagged. The same policy is then applied to the City's VPI for direct comparison, and to the union of the two.</p>
@@ -1507,7 +1626,11 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
   <p>The model achieves the highest precision per parcel inspected. The union strategy trades precision for recall and is the right choice when coverage is the priority.</p>
 
   <h3>12.3 Per-ward precision scatter</h3>
-  <p>City VPI precision on the x-axis, model precision on the y-axis. Some wards reach perfect or near-perfect precision under the model's flagging policy, while others land in the 0.3&ndash;0.5 range. The notebook flags wards where precision falls below a configurable threshold for individual review.</p>
+  <p>A per-ward scatter (City VPI precision on the x-axis, model precision on the y-axis) shows wide variance across wards. Some wards reach perfect or near-perfect precision under the model's flagging policy, while others land in the 0.3&ndash;0.5 range. It flags wards where precision falls below a configurable threshold for individual review.</p>
+  <div class="callout callout-blue">
+    <div class="callout-label">Outputs</div>
+    <p><code>data_py/operational_flags_by_ward.csv</code> per-ward summary, <code>data_py/operational_precision_at_capacity.csv</code> headline citywide table, and the per-ward precision scatter PNG.</p>
+  </div>
 
   <div class="figure-pair">
     <div class="figure">
@@ -1525,10 +1648,10 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-13">
   <div class="section-label">13 &mdash; Local Explanations</div>
   <h2>Local Explanations with TreeSHAP</h2>
-  <p><code>code/python/04f_local_explanations.ipynb</code>. A model that is operationally useful must be explainable at the parcel level. An inspector who is told "go visit this address" must be able to ask "why this one" and get a meaningful answer.</p>
+  <p><code>code/r_code/04f_local_explanations.Rmd</code>. A model that is operationally useful must be explainable at the parcel level. An inspector who is told "go visit this address" must be able to ask "why this one" and get a meaningful answer.</p>
 
   <h3>13.1 Explainer setup &amp; per-parcel attributions</h3>
-  <p><code>shap.TreeExplainer</code> on the fitted Random Forest. For each parcel the explainer returns one SHAP value per feature. The notebook ranks parcels by ensemble probability, takes the top 200, and for each parcel records the five features with the largest absolute SHAP value, the feature value, the SHAP magnitude, and a direction (pushed up or pushed down).</p>
+  <p>This step uses <code>treeshap</code> on the fitted Random Forest component (which dominates the feature attribution alongside the Logistic Regression in the ensemble). For each parcel the explainer returns one SHAP value per feature. The step ranks parcels by ensemble probability, takes the top 200, and for each parcel records the five features with the largest absolute SHAP value, the feature value, the SHAP magnitude, and a direction (pushed up or pushed down).</p>
 
   <h3>13.2 Global SHAP summary across the top 200</h3>
   <ul style="margin: 0 0 1.3em 18px;">
@@ -1538,6 +1661,10 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
     <li><code>n_violations_5yr</code> &amp; <code>n_violations_3yr</code> &mdash; five and three year violation density.</li>
   </ul>
   <p>A useful pattern in the local explanations: some neighborhood-level features push downward at flagged parcels. A high count of vacant parcels in the same ZIP can lower the ensemble probability for a specific parcel &mdash; the model accounts for the neighborhood baseline elsewhere, so an individual parcel in a high-vacancy ZIP is comparatively less risky than a parcel that looks unusual within its ZIP.</p>
+  <div class="callout callout-blue">
+    <div class="callout-label">Outputs</div>
+    <p><code>data_py/parcel_shap_topflags.csv</code> (1,000 rows of parcel by top-five-feature explanations) and <code>docs/graphs/python/shap_summary_topflags.png</code>.</p>
+  </div>
 
   <div class="figure">
     <img src="graphs/python/shap_summary_topflags.png" alt="Top SHAP drivers for flagged parcels" loading="lazy">
@@ -1549,7 +1676,7 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-14">
   <div class="section-label">14 &mdash; Temporal Validation</div>
   <h2>Temporal Validation</h2>
-  <p><code>code/python/04g_temporal_validation.ipynb</code> tests how the model performs on parcels with very recent administrative activity versus parcels whose activity is years old, using <code>days_since_last_viol</code> as a temporal proxy.</p>
+  <p><code>code/r_code/04g_temporal_validation.Rmd</code> tests how the model performs on parcels with very recent administrative activity versus parcels whose activity is years old. The training split is stratified random rather than temporal &mdash; this is correct for measuring AUC (see Step 7.2), but it leaves open the question of how the model performs across activity windows. <code>days_since_last_viol</code> is used as the temporal proxy.</p>
 
   <h3>14.1 Cohorts</h3>
   <ul style="margin: 0 0 1.3em 18px;">
@@ -1568,6 +1695,11 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
     </table>
   </div>
   <p>The model's discrimination is actually higher on the new cohort, where the recent administrative trail is rich. The Brier score on the new cohort is larger in absolute terms because prevalence is roughly 20&times; higher, but the calibration ratio is good. <strong>There is no evidence of temporal decay between the older and newer activity windows.</strong></p>
+  <p>The OVS rates differ by an order of magnitude between the two cohorts, which by itself is informative. Recent violation activity is itself a strong vacancy signal, even before the model touches it.</p>
+  <div class="callout callout-blue">
+    <div class="callout-label">Outputs</div>
+    <p><code>data_py/temporal_validation.csv</code> and <code>docs/graphs/python/temporal_validation.png</code>.</p>
+  </div>
 
   <div class="figure">
     <img src="graphs/python/temporal_validation.png" alt="Temporal validation, old versus new cohort" loading="lazy">
@@ -1579,8 +1711,8 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-15">
   <div class="section-label">15 &mdash; Block CV</div>
   <h2>Block Cross-Validation by Census Tract</h2>
-  <p><code>code/python/04h_block_cv_rf.ipynb</code>. Several engineered features are spatially smooth &mdash; neighborhood vacancy counts, ZIP-level aggregations, and the implicit information that a parcel near many flagged parcels is itself probably flagged. A standard random split puts neighbors on opposite sides, so the model effectively gets to see its training answer through its neighborhood features. This inflates AUC.</p>
-  <p>The notebook re-fits the Random Forest under <code>GroupKFold(n_splits=5, group=census_tract)</code>. Each fold holds out approximately 20% of Philadelphia's census tracts entirely. Production RF hyperparameters are loaded directly from <code>model_rf_final.joblib</code>; SMOTE is not applied because the goal is honest discrimination, not optimized recall.</p>
+  <p><code>code/r_code/04h_block_cv_rf.Rmd</code>. Several engineered features are spatially smooth &mdash; neighborhood vacancy counts, ZIP-level aggregations, and the implicit information that a parcel near many flagged parcels is itself probably flagged. A standard random train/test split puts neighbors on opposite sides of the split, so the model effectively gets to see its training answer through its neighborhood features when scoring the test set. This inflates AUC.</p>
+  <p>This step re-fits the Random Forest under <code>group_vfold_cv(df, group = census_tract, v = 5)</code>. Each fold holds out approximately 20% of Philadelphia's census tracts entirely. No tract appears in both train and test. Production RF hyperparameters are loaded directly from <code>model_rf_final.rds</code>; the same imputation and variance-threshold preprocessing is reused. ROSE oversampling is not applied here because the goal is honest discrimination, not optimized recall.</p>
 
   <h3>15.1 Per-fold AUC</h3>
   <div class="table-wrap">
@@ -1597,8 +1729,9 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
   </div>
   <div class="callout callout-blue">
     <div class="callout-label">The Headline Number</div>
-    <p>Block-CV mean AUC is <strong>0.9677 &plusmn; 0.0083</strong>. This sits between the random-split test AUC (0.9395) and the more aggressive ZIP-blocked CV (0.8877). Census-tract blocking is the right granularity for the operational story &mdash; the city does inspect and intervene at the tract level all the time. <strong>~0.97 is the right number to put on a stakeholder slide as the honest, leakage-controlled AUC for the Random Forest component.</strong></p>
+    <p>Block-CV mean AUC is <strong>0.9677 &plusmn; 0.0083</strong>. The random-split test AUC from 04a was 0.9395 (ensemble) and the spatial-CV ZIP-blocked AUC from 04b was 0.8877 (RF only). The block-CV AUC sits between these, which is consistent with the underlying logic &mdash; ZIP groups are larger than census tracts, so ZIP blocking is a more aggressive test of generalization. Census-tract blocking is the right granularity for the operational story because the city does inspect and intervene at the tract level all the time. <strong>~0.97 is the right number to put on a stakeholder slide as the honest, leakage-controlled AUC for the Random Forest component.</strong></p>
   </div>
+  <p><strong>Outputs.</strong> <code>data_py/block_cv_rf.csv</code> and <code>docs/graphs/python/block_cv_rf_aucs.png</code>.</p>
 
   <div class="figure">
     <img src="graphs/python/block_cv_rf_aucs.png" alt="Block CV AUC by fold" loading="lazy">
@@ -1610,7 +1743,7 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-16">
   <div class="section-label">16 &mdash; Output Analysis</div>
   <h2>Output Analysis &amp; Stakeholder Summaries</h2>
-  <p><code>code/python/05_output_analysis.ipynb</code> turns production predictions into stakeholder-facing materials &mdash; distributions by category and ZIP, a calibration scatter, a choropleth map, an interactive Leaflet map, and a capacity-based threshold lookup table.</p>
+  <p><code>code/r_code/05_output_analysis.Rmd</code> turns production predictions into stakeholder-facing materials &mdash; distributions by category and ZIP, a calibration scatter, a choropleth map, an interactive Leaflet map, and a capacity-based threshold lookup table.</p>
 
   <h3>16.1 The "no-vote" framing</h3>
   <p>About 25% of residential parcels have any positive tree votes from the Random Forest. The remaining 75% receive exactly zero probability, meaning the ensemble unanimously predicts occupied. Three quarters of the residential housing stock is so clearly not vacant that no tree in 500 disagrees.</p>
@@ -1625,17 +1758,25 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
   <p>ZIP 19132 has the highest mean predicted probability at ~3.61%. ZIP 19137 has the lowest at ~0.85%.</p>
 
   <h3>16.7 ZCTA choropleth and interactive Leaflet map</h3>
-  <p><code>pygris.zctas(starts_with="191")</code> downloads US Census ZCTA boundaries for Philadelphia ZIPs. These are joined to the ZIP-level summary and rendered as a static choropleth, plus an interactive Folium map with hover highlighting and click popups showing ZIP, mean P(vacant), parcel count, and observed vacancy rate.</p>
+  <p><code>tigris::zctas(starts_with = "191")</code> downloads US Census ZCTA boundaries for Philadelphia ZIPs (a few MB). These are joined to the ZIP-level summary and rendered as a static choropleth, plus an interactive Leaflet map with hover highlighting and click popups showing ZIP, mean P(vacant), parcel count, and observed vacancy rate.</p>
   <div class="callout">
     <div class="callout-label">Why ZCTA, not parcel polygons?</div>
-    <p>Parcel-resolution geometry is too large to render reliably at notebook resolution and consistently causes out-of-memory errors. The parcel-resolution map lives separately in Step 17 as a vector tileset that the browser handles efficiently.</p>
+    <p>ZCTA boundaries are used rather than <code>PWD_PARCELS.geojson</code> for the static map because the parcel file is over 400 MB and consistently causes the R session to run out of memory or render at unusable resolutions. The parcel-resolution map lives separately in Step 17 as a vector tileset that the browser handles efficiently.</p>
   </div>
 
   <h3>16.8 Capacity-based threshold lookup</h3>
   <p>A precision-recall curve is computed across thresholds 0.01&ndash;0.99 with each row annotated by the corresponding number of parcels flagged. Common inspection volumes (100, 250, 500, 1K, 2K, 5K, 10K) are read off the curve as a lookup table. To flag 5,000 parcels: threshold &asymp; 0.67, precision &asymp; 78%, recall &asymp; 67%. Operations teams pick a row based on actual resourcing rather than committing to a fixed citywide threshold.</p>
 
   <h3>16.9 Optional GeoJSON exports</h3>
-  <p>When parcel polygon geometry is available, two GeoJSON files are written: <code>vacancy_predictions.geojson</code> (~436K parcels, ~405 MB, all prediction columns plus all feature metadata) and <code>vacancy_predictions_flagged.geojson</code> (~4,500 parcels in the top one percent, ~3.9 MB).</p>
+  <p>When <code>PWD_PARCELS.geojson</code> is available, this step writes two GeoJSON files for downstream use.</p>
+  <ul style="margin: 0 0 1.3em 18px;">
+    <li><code>data_py/vacancy_predictions.geojson</code> &mdash; around 436K parcels, around 405 MB. All prediction columns plus all feature metadata.</li>
+    <li><code>data_py/vacancy_predictions_flagged.geojson</code> &mdash; around 4,500 parcels (top one percent flagged), around 3.9 MB. Same column set, smaller geometry.</li>
+  </ul>
+  <div class="callout callout-blue">
+    <div class="callout-label">Outputs</div>
+    <p><code>data_py/output_zip_summary.csv</code>, <code>data_py/output_category_summary.csv</code>, <code>data_py/capacity_threshold_curve.csv</code>, <code>data_py/vacancy_risk_map.html</code>, plus the two GeoJSON files and a folder of static PNGs under <code>docs/graphs/python/</code>.</p>
+  </div>
 
   <div class="figure-pair">
     <div class="figure">
@@ -1673,17 +1814,89 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
 <section id="step-17">
   <div class="section-label">17 &mdash; Vector Tilesets</div>
   <h2>Vector Tilesets for Web Consumption</h2>
-  <p><code>code/python/06_tiling.ipynb</code>. The 405 MB GeoJSON from Step 16 is unusable in a browser as is. This notebook converts both GeoJSON exports into <strong>PMTiles</strong>, a single-file vector tileset format that the browser can stream from static storage (S3, GCS, GitHub Pages) and consume directly via MapLibre GL JS or Mapbox GL JS without a tile server.</p>
+  <p><code>code/r_code/06_tiling.Rmd</code>. The 405 MB GeoJSON from Step 16 is unusable in a browser as is. This step converts both GeoJSON exports into <strong>PMTiles</strong>, a single-file vector tileset format that the browser can stream from static storage (S3, GCS, GitHub Pages) and consume directly via MapLibre GL JS or Mapbox GL JS without a tile server.</p>
 
   <h3>17.1 Toolchain</h3>
-  <p><code>tippecanoe</code> (version 2.80, Felt fork) is the converter. It is invoked via subprocess from inside the notebook. The Felt fork is required for the PMTiles output format &mdash; vanilla tippecanoe writes mbtiles only.</p>
+  <p><code>tippecanoe</code> (version 2.80, Felt fork) is the converter. It is invoked via <code>system2()</code> from inside the Rmd. The Felt fork is required for the PMTiles output format &mdash; vanilla tippecanoe writes mbtiles only.</p>
 
   <h3>17.2 Flagged tileset</h3>
-  <p><code>vacancy_flagged.pmtiles</code> covers the top one percent flagged parcels &mdash; around 4,500 features, zoom 10&ndash;16. The layer name inside the tileset is <code>flagged</code>. At lower zooms tippecanoe coalesces the densest parcels so the tileset stays readable. Final file size: ~2.2 MB.</p>
+  <p><code>vacancy_flagged.pmtiles</code> covers the top one percent flagged parcels &mdash; around 4,500 features, zoom 10&ndash;16. The layer name inside the tileset is <code>flagged</code>. At lower zooms tippecanoe coalesces the densest parcels so the tileset stays readable. Final file size: ~2.2 MB. This is the right tileset for high-zoom drill-down on the inspection target list.</p>
 
   <h3>17.3 Full prediction tileset</h3>
-  <p><code>vacancy_predictions.pmtiles</code> covers all ~436K parcels, zoom 10&ndash;15. The layer name inside the tileset is <code>parcels</code>. The notebook applies a 10-unit simplification at low zooms and drops the densest features when tile size exceeds the limit. Final file size: ~46 MB.</p>
+  <p><code>vacancy_predictions.pmtiles</code> covers all ~436K parcels, zoom 10&ndash;15. The layer name inside the tileset is <code>parcels</code>. The pipeline applies a 10-unit simplification at low zooms and drops the densest features when tile size exceeds the limit. Final file size: ~46 MB.</p>
   <p>Both tilesets carry the full feature property bag including <code>risk_score</code>, <code>ensemble_prob</code>, <code>qtile_tier</code>, <code>zip</code>, <code>tract</code>, <code>ward</code>, <code>address</code>, and <code>ovs</code>. Client-side styling and filtering are therefore possible without round-tripping to a server. A consumer can color by risk score, filter to flagged only, search by ZIP, or drill into a single parcel popup, all in the browser.</p>
+  <p>For visual sanity-checking the file <a href="https://protomaps.github.io/PMTiles/" target="_blank" rel="noopener">https://protomaps.github.io/PMTiles/</a> accepts a PMTiles URL and renders it.</p>
+  <div class="callout callout-blue">
+    <div class="callout-label">Outputs</div>
+    <p><code>data_py/tiles/vacancy_flagged.pmtiles</code> and <code>data_py/tiles/vacancy_predictions.pmtiles</code>.</p>
+  </div>
+</section>
+
+<!-- WEBSITE & DASHBOARD -->
+<section id="website-dashboard">
+  <div class="section-label">Reference &mdash; Website &amp; Dashboard</div>
+  <h2>Website &amp; Dashboard</h2>
+  <p>Everything that gets handed to a non-technical audience lives in <code>docs/</code>. The folder is fully static, ships with a graceful fallback for the Flask backend, and is designed to be pushed to GitHub Pages or any static host without modification.</p>
+
+  <h3>Public-facing pages</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>docs/index.html</td><td>Tiny redirect that drops visitors onto the landing page</td></tr>
+        <tr><td>docs/Vacancy Risk Landing Page.html</td><td>Project landing page. The "what this is and why it matters" surface for stakeholders</td></tr>
+        <tr><td>docs/PhillyStat360 v2.html</td><td>Full methodology write-up. Mirrors the step-by-step structure of the README in a presentation-ready layout</td></tr>
+        <tr><td>docs/dashboard.html</td><td>Interactive parcel-level dashboard. MapLibre + PMTiles vector parcels, SHAP risk drivers per parcel, ward choropleth, sidebar summary cards, ward filter, and parcel search</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Data shipped with the dashboard</h3>
+  <p>The dashboard needs a small set of static files alongside the HTML. Each file is the direct output of a pipeline step.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Source step</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>vacancy_predictions.pmtiles (~46 MB)</td><td>Step 17</td><td>Full citywide parcel tileset, layer name <code>parcels</code></td></tr>
+        <tr><td>vacancy_flagged.pmtiles (~2.2 MB)</td><td>Step 17</td><td>Top one percent flagged parcels, layer name <code>flagged</code></td></tr>
+        <tr><td>vacancy_predictions_flagged.geojson (~3.9 MB)</td><td>Step 16</td><td>Flagged parcels as GeoJSON for the SHAP table backend</td></tr>
+        <tr><td>ward_boundaries.geojson</td><td>Step 16</td><td>Polygon geometry for the 66 political wards</td></tr>
+        <tr><td>ward_stats.json</td><td>Step 16</td><td>Per-ward rollups used to power the choropleth, summary cards, and ward filter list in static mode</td></tr>
+        <tr><td>dashboard_shap.json</td><td>Step 13</td><td>Per-parcel SHAP risk drivers for the dashboard's "why this parcel" panel</td></tr>
+        <tr><td>colors_and_type.css</td><td>&mdash;</td><td>Shared colour palette and type scale across landing page, methodology, and dashboard</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Static vs local-server mode</h3>
+  <p><code>dashboard.html</code> auto-detects the host. On <code>localhost</code> or <code>127.0.0.1</code> it tries the local Flask backend first (<code>docs/tileserver.py</code>, backed by PostgreSQL/PostGIS via <code>docs/load_db.py</code>). On any other host it skips the backend entirely and falls back to the JSON files above.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Feature</th><th>Local-server mode</th><th>Static mode</th></tr></thead>
+      <tbody>
+        <tr><td>Map basemap and PMTiles</td><td>CARTO basemap, vector parcels from <code>vacancy_predictions.pmtiles</code></td><td>Same</td></tr>
+        <tr><td>Parcel popups (click)</td><td>Full property bag from PMTiles</td><td>Full property bag from PMTiles</td></tr>
+        <tr><td>SHAP risk drivers</td><td><code>dashboard_shap.json</code></td><td><code>dashboard_shap.json</code></td></tr>
+        <tr><td>Ward choropleth</td><td><code>ward_stats.json</code> + <code>ward_boundaries.geojson</code></td><td>Same</td></tr>
+        <tr><td>Sidebar summary cards</td><td><code>/summary</code> endpoint</td><td>Aggregated from <code>ward_stats.json</code></td></tr>
+        <tr><td>Ward filter list</td><td><code>/wards</code> endpoint</td><td>From <code>ward_stats.json</code></td></tr>
+        <tr><td>Ward fly-to</td><td><code>/ward_bounds</code> endpoint</td><td>Computed client-side from the ward boundary GeoJSON</td></tr>
+        <tr><td>Parcel search</td><td>DB-wide search via <code>/search</code></td><td>Limited to parcels currently rendered in view (<code>queryRenderedFeatures</code>)</td></tr>
+        <tr><td>Census tract filter</td><td><code>/census_tracts</code> and <code>/tract_bounds</code></td><td>Disabled unless <code>census_tracts.json</code> is shipped</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The local Flask backend is optional. It exists for the case where the city wants DB-wide parcel search and tract-level filtering on a workstation. Everything in the public deployment is static.</p>
+
+  <h3>Deployment</h3>
+  <p>Full GitHub Pages deployment notes live in <code>docs/DEPLOY.md</code>. The short version is:</p>
+<pre># From the repo root, push the docs/ folder along with everything else:
+git add docs/
+git commit -m "Update site"
+git push origin main
+# Settings &rarr; Pages &rarr; Source: Deploy from a branch, main / docs</pre>
+  <p>The two PMTiles files stay in the repo as ordinary objects rather than Git LFS, because GitHub Pages does not serve LFS objects through its CDN. The largest file (<code>vacancy_predictions.pmtiles</code>, around 46 MB) sits comfortably under GitHub's 100 MB per-file limit. To host the tilesets on S3, Cloudflare R2, or any other static bucket instead, set the <code>PMTILES_URL</code> constant at the top of the <code>&lt;script&gt;</code> block in <code>dashboard.html</code> to the absolute URL &mdash; the PMTiles JS reader will stream byte ranges over HTTP.</p>
+  <p><code>docs/sync_methodology_assets.sh</code> copies the latest figures from <code>docs/graphs/</code> and <code>docs/code/outputs/</code> into the methodology page so the public write-up stays in sync with the modeling pipeline.</p>
 </section>
 
 <!-- HEADLINE METRICS -->
@@ -1736,14 +1949,14 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
         <tr><td>Life-history features</td><td>Trend &amp; acceleration over 3yr / 5yr / 2yr windows</td><td>Single counts miss whether a property is getting worse, stable, or improving.</td></tr>
         <tr><td>RTT integration</td><td>Transfer frequency, sheriff sales, log price change</td><td>Full deed history adds distress signals not in OPA's single most-recent sale.</td></tr>
         <tr><td>Train / test split</td><td>Stratified random 70/30</td><td>Temporal split caused distributional shift because recency is itself a vacancy proxy.</td></tr>
-        <tr><td>Spatial validation</td><td>10-fold ZIP CV + LOGO + 5-fold tract block CV</td><td>Tests generalization independent of spatial autocorrelation. Tract block CV is the honest stakeholder-reportable AUC.</td></tr>
+        <tr><td>Spatial validation</td><td>10-fold ZIP CV + LOGO + 5-fold tract block CV</td><td>Tests generalization independent of spatial autocorrelation. LOGO simulates new geography. Tract block CV is the honest stakeholder-reportable AUC.</td></tr>
         <tr><td>No assessed value features</td><td><code>log_market_value</code>, <code>value_per_sqft</code> excluded</td><td>OPA assessed values have documented racial and geographic bias.</td></tr>
         <tr><td>Production score</td><td>50/50 Logit + RF, isotonic at the end</td><td>Logit and RF capture different signal shape. Equal weighting beat tuned weighting in CV. Isotonic restores honest empirical positive rates.</td></tr>
         <tr><td>No fixed binary threshold</td><td>Top 1% rank flag plus 5-tier rank bucket</td><td>Calibrated probabilities are all small because vacancy is rare. Use rank or capacity.</td></tr>
-        <tr><td>ZCTA boundaries for static maps</td><td><code>pygris</code> package</td><td>Parcel-resolution geometry is too large for notebook rendering. Parcel-resolution lives in PMTiles.</td></tr>
+        <tr><td>ZCTA boundaries for static maps</td><td><code>tigris</code> package</td><td><code>PWD_PARCELS.geojson</code> is over 400 MB. ZCTA is practical for rendering and presentations. Parcel-resolution lives in PMTiles.</td></tr>
         <tr><td>Per-ward capacity flagging</td><td>1% of each ward's residential parcels</td><td>Single citywide threshold concentrates too many flags in a few neighborhoods. Per-ward keeps inspection load sensible everywhere.</td></tr>
-        <tr><td>04b mirrors 04a exactly</td><td>Identical model_vars, recipe, hyperparameters</td><td>Spatial CV must evaluate the deployed model. Divergence would produce misleading metrics.</td></tr>
-        <tr><td>No poverty rate in model</td><td>ACS variables removed from <code>model_vars</code></td><td>Used only in the equity audits as an analysis dimension, not a feature.</td></tr>
+        <tr><td>04b mirrors 04a exactly</td><td>Identical model_vars, recipe, hyperparameters</td><td>Spatial CV and LOGO CV must evaluate the same model that is deployed. Divergence would produce misleading validation metrics.</td></tr>
+        <tr><td>No poverty rate in model</td><td>ACS variables removed from <code>model_vars</code></td><td>Used only in the equity audits as an analysis dimension, not a feature. Avoids an external Census API dependency at training time.</td></tr>
       </tbody>
     </table>
   </div>
@@ -1759,12 +1972,12 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
     <table>
       <thead><tr><th>File</th><th>Contents</th></tr></thead>
       <tbody>
-        <tr><td>model_logit_final.joblib</td><td>Fitted Logistic Regression pipeline.</td></tr>
-        <tr><td>model_rf_final.joblib</td><td>Fitted Random Forest pipeline.</td></tr>
-        <tr><td>model_xgb_final.joblib</td><td>Fitted XGBoost pipeline. Diagnostic comparator.</td></tr>
-        <tr><td>model_lgb_final.joblib</td><td>Fitted LightGBM pipeline. Diagnostic comparator.</td></tr>
-        <tr><td>calibrators.joblib</td><td>Original isotonic calibrators for each model and the ensemble.</td></tr>
-        <tr><td>calibrators_v2.joblib</td><td>Held-out recalibrated ensemble calibrator. Recommended for production.</td></tr>
+        <tr><td>model_logit_final.rds</td><td>Fitted Logistic Regression pipeline.</td></tr>
+        <tr><td>model_rf_final.rds</td><td>Fitted Random Forest pipeline.</td></tr>
+        <tr><td>model_xgb_final.rds</td><td>Fitted XGBoost pipeline. Diagnostic comparator.</td></tr>
+        <tr><td>model_lgb_final.rds</td><td>Fitted LightGBM pipeline. Diagnostic comparator.</td></tr>
+        <tr><td>calibrators.rds</td><td>Original isotonic calibrators for each model and the ensemble.</td></tr>
+        <tr><td>calibrators_v2.rds</td><td>Held-out recalibrated ensemble calibrator. Recommended for production.</td></tr>
         <tr><td>model_thresholds.csv</td><td>Per-model Youden thresholds plus AUC, sensitivity, specificity, and <code>is_best</code>.</td></tr>
       </tbody>
     </table>
@@ -1822,7 +2035,7 @@ ci_upper = np.clip(rf_prob + 1.96 * rf_se, 0, 1)</pre>
     <table>
       <thead><tr><th>File</th><th>Contents</th></tr></thead>
       <tbody>
-        <tr><td>vacancy_risk_map.html</td><td>Interactive folium ZCTA-level map.</td></tr>
+        <tr><td>vacancy_risk_map.html</td><td>Interactive Leaflet ZCTA-level map.</td></tr>
         <tr><td>vacancy_predictions.geojson</td><td>~436K parcel polygons with all predictions.</td></tr>
         <tr><td>vacancy_predictions_flagged.geojson</td><td>~4,500 flagged parcels with all predictions.</td></tr>
         <tr><td>tiles/vacancy_flagged.pmtiles</td><td>~2.2 MB. Top 1%.</td></tr>
